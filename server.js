@@ -18,7 +18,7 @@ const pool = new Pool({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
-const GOOGLE_CLIENT_ID = '816021523687-bjk1hqap09aak1bl9rb3tk60q8qr4q1b.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '384124217618-38rde3tgblslp1s9u3e1fn5tn7h971uk.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Email Configuration
@@ -180,7 +180,7 @@ app.post('/api/missing-persons', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ GET MY POSTS (This is what you need!)
+// GET MY POSTS
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM missing_persons WHERE user_id = $1 ORDER BY date_missing DESC', [req.user.id]);
@@ -191,7 +191,7 @@ app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ UPDATE POST (Edit)
+// UPDATE POST (Edit)
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -215,7 +215,7 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ DELETE POST
+// DELETE POST
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
