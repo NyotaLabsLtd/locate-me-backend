@@ -6,6 +6,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 app.use(cors());
@@ -30,10 +32,30 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-const generateVerificationCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+// RATE LIMITING - Protect against brute force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per windowMs
+  message: { error: 'Too many attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// REGISTER - with email verification
-app.post('/api/auth/register', async (req, res) => {
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per windowMs
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Generate secure verification token
+const generateVerificationToken = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// REGISTER - with email verification LINK
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -42,43 +64,75 @@ app.post('/api/auth/register', async (req, res) => {
     if (existingUser.rows.length > 0) return res.status(409).json({ error: 'Email already registered' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const verificationCode = generateVerificationCode();
+    const verificationToken = generateVerificationToken();
 
     const result = await pool.query(
       'INSERT INTO users (email, password, verification_token, is_verified, role) VALUES ($1, $2, $3, false, $4) RETURNING id, email, role',
-      [email, hashedPassword, verificationCode, 'user']
+      [email, hashedPassword, verificationToken, 'user']
     );
 
+    // Send verification LINK
+    const verificationLink = `https://locate-me-app.vercel.app/?verify=${verificationToken}`;
+    
     const mailOptions = {
       from: `"Locate Me" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Verify your Locate Me Account',
-      text: `Your verification code is: ${verificationCode}. Please enter this in the app to activate your account.`
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4;">
+          <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px;">
+            <h2 style="color: #fbbf24; text-align: center;">🔍 Locate Me</h2>
+            <p style="font-size: 16px; color: #333;">Welcome to Locate Me!</p>
+            <p style="font-size: 16px; color: #333;">Please verify your email address by clicking the button below:</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${verificationLink}" 
+                 style="background: #fbbf24; color: #0f172a; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                Verify Email Address
+              </a>
+            </div>
+            <p style="font-size: 14px; color: #666;">Or copy and paste this link into your browser:</p>
+            <p style="font-size: 12px; color: #999; word-break: break-all;">${verificationLink}</p>
+            <p style="font-size: 14px; color: #666; margin-top: 30px;">This link will expire in 24 hours.</p>
+            <p style="font-size: 14px; color: #666;">If you didn't create this account, please ignore this email.</p>
+          </div>
+        </div>
+      `
     };
     
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) console.error('Email send error:', error);
-      else console.log('Verification email sent:', info.response);
+    await transporter.sendMail(mailOptions);
+    
+    res.status(201).json({ 
+      message: 'Account created! Please check your email and click the verification link to activate your account.' 
     });
-
-    res.status(201).json({ message: 'Account created. Please check your email for the verification code.' });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
 
-// VERIFY EMAIL
-app.post('/api/auth/verify', async (req, res) => {
+// VERIFY EMAIL via token
+app.get('/api/auth/verify/:token', async (req, res) => {
   try {
-    const { email, code } = req.body;
-    const result = await pool.query('SELECT * FROM users WHERE email = $1 AND verification_token = $2', [email, code]);
+    const { token } = req.params;
+    const result = await pool.query('SELECT * FROM users WHERE verification_token = $1', [token]);
     
-    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid code or email' });
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired verification link' });
+    }
 
-    await pool.query('UPDATE users SET is_verified = true, verification_token = NULL WHERE email = $1', [email]);
+    const user = result.rows[0];
     
-    res.json({ message: 'Email verified successfully! You can now log in.' });
+    // Check if already verified
+    if (user.is_verified) {
+      return res.json({ message: 'Email already verified! You can now log in.', alreadyVerified: true });
+    }
+
+    await pool.query(
+      'UPDATE users SET is_verified = true, verification_token = NULL WHERE id = $1', 
+      [user.id]
+    );
+    
+    res.json({ message: 'Email verified successfully! You can now log in.', verified: true });
   } catch (err) {
     console.error('Verify error:', err);
     res.status(500).json({ error: 'Verification failed' });
@@ -86,7 +140,7 @@ app.post('/api/auth/verify', async (req, res) => {
 });
 
 // LOGIN - checks verification
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
@@ -94,7 +148,12 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
     
-    if (!user.is_verified) return res.status(403).json({ error: 'Please verify your email before logging in.' });
+    if (!user.is_verified) {
+      return res.status(403).json({ 
+        error: 'Please verify your email before logging in. Check your inbox for the verification link.',
+        unverified: true 
+      });
+    }
 
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) return res.status(401).json({ error: 'Invalid email or password' });
@@ -108,7 +167,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // GOOGLE SIGN-IN
-app.post('/api/auth/google', async (req, res) => {
+app.post('/api/auth/google', authLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
@@ -152,7 +211,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // GET ALL MISSING PERSONS
-app.get('/api/missing-persons', async (req, res) => {
+app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM missing_persons ORDER BY date_missing DESC');
     res.json(result.rows);
@@ -238,7 +297,7 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
 });
 
 // SIGHTINGS
-app.get('/api/sightings', async (req, res) => {
+app.get('/api/sightings', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sightings ORDER BY created_at DESC');
     res.json(result.rows);
