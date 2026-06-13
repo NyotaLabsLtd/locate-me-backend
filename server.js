@@ -5,7 +5,6 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
-const { Resend } = require('resend'); // ✅ Using Resend now
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 
@@ -14,7 +13,6 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -24,10 +22,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = '384124217618-38rde3tgblslp1s9u3e1fn5tn7h971uk.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// ✅ Initialize Resend with your API key
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-// RATE LIMITING
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -49,7 +43,7 @@ const generateVerificationToken = () => {
 };
 
 // ==========================================
-// REGISTER with Resend
+// AUTH ROUTES
 // ==========================================
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
@@ -65,7 +59,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     
     if (existingUser.rows.length > 0 && !existingUser.rows[0].is_verified) {
       await pool.query('DELETE FROM users WHERE email = $1', [email]);
-      console.log('️ Deleted unverified user:', email);
+      console.log('🗑️ Deleted unverified user:', email);
     } 
     else if (existingUser.rows.length > 0 && existingUser.rows[0].is_verified) {
       return res.status(409).json({ error: 'Email already registered. Please log in.' });
@@ -74,45 +68,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = generateVerificationToken();
 
-    const result = await pool.query(
-      'INSERT INTO users (email, password, verification_token, is_verified, role) VALUES ($1, $2, $3, false, $4) RETURNING id, email, role',
+    await pool.query(
+      'INSERT INTO users (email, password, verification_token, is_verified, role) VALUES ($1, $2, $3, false, $4)',
       [email, hashedPassword, verificationToken, 'user']
     );
     console.log('✅ User created in database');
 
-    const verificationLink = `https://locate-me-app.vercel.app/?verify=${verificationToken}`;
-    
-    // ✅ Send email using Resend
-    const { data, error } = await resend.emails.send({
-      from: 'Locate Me <onboarding@resend.dev>', // Resend's default test domain
-      to: [email],
-      subject: 'Verify your Locate Me Account',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4;">
-          <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px;">
-            <h2 style="color: #fbbf24; text-align: center;">🔍 Locate Me</h2>
-            <p style="font-size: 16px; color: #333;">Welcome to Locate Me!</p>
-            <p style="font-size: 16px; color: #333;">Please verify your email address by clicking the button below:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${verificationLink}" 
-                 style="background: #fbbf24; color: #0f172a; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-                Verify Email Address
-              </a>
-            </div>
-            <p style="font-size: 14px; color: #666;">If you didn't create this account, please ignore this email.</p>
-          </div>
-        </div>
-      `
-    });
-
-    if (error) {
-      console.error('❌ Resend error:', error);
-    } else {
-      console.log('✅ Email sent via Resend:', data);
-    }
-
+    // ✅ Send the token back to the frontend so EmailJS can use it
     res.status(201).json({ 
-      message: 'Account created! Please check your email for the verification link.' 
+      message: 'Account created!',
+      token: verificationToken 
     });
   } catch (err) {
     console.error('❌ Registration error:', err);
@@ -120,7 +85,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 });
 
-// VERIFY EMAIL
 app.get('/api/auth/verify/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -148,7 +112,6 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-// LOGIN
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -175,7 +138,6 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-// GOOGLE SIGN-IN
 app.post('/api/auth/google', authLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
@@ -206,7 +168,6 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
   }
 });
 
-// Middleware
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -219,7 +180,6 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-// GET ALL MISSING PERSONS
 app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM missing_persons ORDER BY date_missing DESC');
@@ -230,7 +190,6 @@ app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   }
 });
 
-// CREATE MISSING PERSON
 app.post('/api/missing-persons', authenticateToken, async (req, res) => {
   try {
     const { name, age, gender, last_seen_location, photo_urls, description, notes, residence, police_station, date_missing } = req.body;
@@ -248,7 +207,6 @@ app.post('/api/missing-persons', authenticateToken, async (req, res) => {
   }
 });
 
-// GET MY POSTS
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM missing_persons WHERE user_id = $1 ORDER BY date_missing DESC', [req.user.id]);
@@ -259,7 +217,6 @@ app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
   }
 });
 
-// UPDATE POST
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -283,7 +240,6 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE POST
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -305,7 +261,6 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// SIGHTINGS
 app.get('/api/sightings', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sightings ORDER BY created_at DESC');
@@ -331,7 +286,6 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
   }
 });
 
-// ADMIN ROUTE
 app.get('/api/admin/users', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   const result = await pool.query('SELECT id, email, role, created_at, is_verified FROM users ORDER BY created_at DESC');
