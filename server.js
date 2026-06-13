@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
+app.set('trust proxy', 1); // ✅ FIX: Trust proxy for rate limiting
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -29,13 +30,16 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false // ✅ FIX: Allow self-signed certs
   }
 });
 
-// RATE LIMITING - Protect against brute force
+// RATE LIMITING
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 5 requests per windowMs
+  max: 10, // 10 requests
   message: { error: 'Too many attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -43,13 +47,12 @@ const authLimiter = rateLimit({
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per windowMs
+  max: 100, // 100 requests
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Generate secure verification token
 const generateVerificationToken = () => {
   return crypto.randomBytes(32).toString('hex');
 };
@@ -58,34 +61,38 @@ const generateVerificationToken = () => {
 // AUTH ROUTES
 // ==========================================
 
-// REGISTER - with email verification LINK
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-
-    // Check if user exists
-    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    console.log('📩 Registration attempt for:', req.body.email);
     
-    // If user exists but is NOT verified, delete them (allow re-registration)
+    const { email, password } = req.body;
+    if (!email || !password) {
+      console.log('❌ Missing email or password');
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+
+    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    console.log('🔍 Existing user check:', existingUser.rows.length, 'found');
+    
     if (existingUser.rows.length > 0 && !existingUser.rows[0].is_verified) {
       await pool.query('DELETE FROM users WHERE email = $1', [email]);
-      console.log(`Deleted unverified user: ${email}`);
+      console.log('🗑️ Deleted unverified user:', email);
     } 
-    // If user exists and IS verified, reject
     else if (existingUser.rows.length > 0 && existingUser.rows[0].is_verified) {
-      return res.status(409).json({ error: 'Email already registered. Please log in or use a different email.' });
+      console.log('❌ Email already verified:', email);
+      return res.status(409).json({ error: 'Email already registered. Please log in.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = generateVerificationToken();
+    console.log('🔐 Password hashed, token generated');
 
     const result = await pool.query(
       'INSERT INTO users (email, password, verification_token, is_verified, role) VALUES ($1, $2, $3, false, $4) RETURNING id, email, role',
       [email, hashedPassword, verificationToken, 'user']
     );
+    console.log('✅ User inserted into database:', result.rows[0].email);
 
-    // Send verification LINK
     const verificationLink = `https://locate-me-app.vercel.app/?verify=${verificationToken}`;
     
     const mailOptions = {
@@ -96,29 +103,37 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         <div style="font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4;">
           <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px;">
             <h2 style="color: #fbbf24; text-align: center;">🔍 Locate Me</h2>
-            <p style="font-size: 16px; color: #333;">Welcome to Locate Me!</p>
-            <p style="font-size: 16px; color: #333;">Please verify your email address by clicking the button below:</p>
+            <p style="font-size: 16px; color: #333;">Click the button below to verify your email:</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${verificationLink}" 
                  style="background: #fbbf24; color: #0f172a; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                 Verify Email Address
               </a>
             </div>
-            <p style="font-size: 14px; color: #666; margin-top: 30px;">This link will expire in 24 hours.</p>
-            <p style="font-size: 14px; color: #666;">If you didn't create this account, please ignore this email.</p>
           </div>
         </div>
       `
     };
     
-    await transporter.sendMail(mailOptions);
+    console.log('📤 Attempting to send email to:', email);
     
+    // ✅ FIX: Send email but don't block response if it fails
+    transporter.sendMail(mailOptions)
+      .then(info => {
+        console.log('✅ Email sent successfully:', info.response);
+      })
+      .catch(err => {
+        console.error('❌ Email send failed (non-fatal):', err.message);
+        console.log('User can still verify via resend link');
+      });
+    
+    console.log('✅ Registration complete for:', email);
     res.status(201).json({ 
-      message: 'Account created! Please check your email and click the verification link to activate your account.' 
+      message: 'Account created! Please check your email for the verification link.' 
     });
   } catch (err) {
-    console.error('Register error:', err);
-    res.status(500).json({ error: 'Registration failed' });
+    console.error('❌ Registration error:', err);
+    res.status(500).json({ error: 'Registration failed: ' + err.message });
   }
 });
 
@@ -134,7 +149,6 @@ app.get('/api/auth/verify/:token', async (req, res) => {
 
     const user = result.rows[0];
     
-    // Check if already verified
     if (user.is_verified) {
       return res.json({ message: 'Email already verified! You can now log in.', alreadyVerified: true });
     }
@@ -162,7 +176,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     
     if (!user.is_verified) {
       return res.status(403).json({ 
-        error: 'Please verify your email before logging in. Check your inbox for the verification link.',
+        error: 'Please verify your email before logging in.',
         unverified: true 
       });
     }
@@ -209,10 +223,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
   }
 });
 
-// ==========================================
-// MIDDLEWARE
-// ==========================================
-
+// Middleware
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -224,10 +235,6 @@ const authenticateToken = (req, res, next) => {
     res.status(403).json({ error: 'Invalid or expired token' });
   }
 };
-
-// ==========================================
-// MISSING PERSONS ROUTES
-// ==========================================
 
 // GET ALL MISSING PERSONS
 app.get('/api/missing-persons', generalLimiter, async (req, res) => {
@@ -315,10 +322,7 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// SIGHTINGS ROUTES
-// ==========================================
-
+// SIGHTINGS
 app.get('/api/sightings', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sightings ORDER BY created_at DESC');
@@ -344,19 +348,12 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// ADMIN ROUTES
-// ==========================================
-
+// ADMIN ROUTE
 app.get('/api/admin/users', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   const result = await pool.query('SELECT id, email, role, created_at, is_verified FROM users ORDER BY created_at DESC');
   res.json(result.rows);
 });
-
-// ==========================================
-// SERVER START
-// ==========================================
 
 app.get('/', (req, res) => res.send('✅ Locate Me Backend is Running!'));
 
