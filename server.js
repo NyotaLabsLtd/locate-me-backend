@@ -13,6 +13,7 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -22,6 +23,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = '384124217618-38rde3tgblslp1s9u3e1fn5tn7h971uk.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+// RATE LIMITING
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -74,7 +76,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     );
     console.log('✅ User created in database');
 
-    // ✅ Send the token back to the frontend so EmailJS can use it
     res.status(201).json({ 
       message: 'Account created!',
       token: verificationToken 
@@ -168,6 +169,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
   }
 });
 
+// Middleware
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -179,6 +181,10 @@ const authenticateToken = (req, res, next) => {
     res.status(403).json({ error: 'Invalid or expired token' });
   }
 };
+
+// ==========================================
+// MISSING PERSONS ROUTES
+// ==========================================
 
 app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   try {
@@ -261,6 +267,10 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// ==========================================
+// SIGHTINGS ROUTES
+// ==========================================
+
 app.get('/api/sightings', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sightings ORDER BY created_at DESC');
@@ -286,11 +296,56 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
   }
 });
 
+// ==========================================
+// ADMIN ROUTES
+// ==========================================
+
+// Get all users (existing)
 app.get('/api/admin/users', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   const result = await pool.query('SELECT id, email, role, created_at, is_verified FROM users ORDER BY created_at DESC');
   res.json(result.rows);
 });
+
+// ✅ NEW: Get Missing Persons with Poster Email
+app.get('/api/admin/missing-persons', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  
+  try {
+    const result = await pool.query(`
+      SELECT mp.*, u.email as poster_email 
+      FROM missing_persons mp 
+      LEFT JOIN users u ON mp.user_id = u.id 
+      ORDER BY mp.date_missing DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Admin missing persons error:', err);
+    res.status(500).json({ error: 'Failed to fetch missing persons' });
+  }
+});
+
+// ✅ NEW: Get Sightings with Reporter Email
+app.get('/api/admin/sightings-full', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  
+  try {
+    const result = await pool.query(`
+      SELECT s.*, u.email as reporter_email 
+      FROM sightings s 
+      LEFT JOIN users u ON s.user_id = u.id 
+      ORDER BY s.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Admin sightings error:', err);
+    res.status(500).json({ error: 'Failed to fetch sightings' });
+  }
+});
+
+// ==========================================
+// SERVER START
+// ==========================================
 
 app.get('/', (req, res) => res.send('✅ Locate Me Backend is Running!'));
 
