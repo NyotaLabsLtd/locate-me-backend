@@ -5,49 +5,40 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend'); // ✅ Using Resend now
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-app.set('trust proxy', 1); // ✅ FIX: Trust proxy for rate limiting
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Connect to Neon Database
+// Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = '384124217618-38rde3tgblslp1s9u3e1fn5tn7h971uk.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// Email Configuration
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  tls: {
-    rejectUnauthorized: false // ✅ FIX: Allow self-signed certs
-  }
-});
+// ✅ Initialize Resend with your API key
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // RATE LIMITING
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 requests
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   message: { error: 'Too many attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -58,7 +49,7 @@ const generateVerificationToken = () => {
 };
 
 // ==========================================
-// AUTH ROUTES
+// REGISTER with Resend
 // ==========================================
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
@@ -67,67 +58,59 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     
     const { email, password } = req.body;
     if (!email || !password) {
-      console.log('❌ Missing email or password');
       return res.status(400).json({ error: 'Email and password required' });
     }
 
     const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    console.log('🔍 Existing user check:', existingUser.rows.length, 'found');
     
     if (existingUser.rows.length > 0 && !existingUser.rows[0].is_verified) {
       await pool.query('DELETE FROM users WHERE email = $1', [email]);
-      console.log('🗑️ Deleted unverified user:', email);
+      console.log('️ Deleted unverified user:', email);
     } 
     else if (existingUser.rows.length > 0 && existingUser.rows[0].is_verified) {
-      console.log('❌ Email already verified:', email);
       return res.status(409).json({ error: 'Email already registered. Please log in.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = generateVerificationToken();
-    console.log('🔐 Password hashed, token generated');
 
     const result = await pool.query(
       'INSERT INTO users (email, password, verification_token, is_verified, role) VALUES ($1, $2, $3, false, $4) RETURNING id, email, role',
       [email, hashedPassword, verificationToken, 'user']
     );
-    console.log('✅ User inserted into database:', result.rows[0].email);
+    console.log('✅ User created in database');
 
     const verificationLink = `https://locate-me-app.vercel.app/?verify=${verificationToken}`;
     
-    const mailOptions = {
-      from: `"Locate Me" <${process.env.EMAIL_USER}>`,
-      to: email,
+    // ✅ Send email using Resend
+    const { data, error } = await resend.emails.send({
+      from: 'Locate Me <onboarding@resend.dev>', // Resend's default test domain
+      to: [email],
       subject: 'Verify your Locate Me Account',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4;">
           <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px;">
             <h2 style="color: #fbbf24; text-align: center;">🔍 Locate Me</h2>
-            <p style="font-size: 16px; color: #333;">Click the button below to verify your email:</p>
+            <p style="font-size: 16px; color: #333;">Welcome to Locate Me!</p>
+            <p style="font-size: 16px; color: #333;">Please verify your email address by clicking the button below:</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${verificationLink}" 
                  style="background: #fbbf24; color: #0f172a; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                 Verify Email Address
               </a>
             </div>
+            <p style="font-size: 14px; color: #666;">If you didn't create this account, please ignore this email.</p>
           </div>
         </div>
       `
-    };
-    
-    console.log('📤 Attempting to send email to:', email);
-    
-    // ✅ FIX: Send email but don't block response if it fails
-    transporter.sendMail(mailOptions)
-      .then(info => {
-        console.log('✅ Email sent successfully:', info.response);
-      })
-      .catch(err => {
-        console.error('❌ Email send failed (non-fatal):', err.message);
-        console.log('User can still verify via resend link');
-      });
-    
-    console.log('✅ Registration complete for:', email);
+    });
+
+    if (error) {
+      console.error('❌ Resend error:', error);
+    } else {
+      console.log('✅ Email sent via Resend:', data);
+    }
+
     res.status(201).json({ 
       message: 'Account created! Please check your email for the verification link.' 
     });
@@ -137,7 +120,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 });
 
-// VERIFY EMAIL via token
+// VERIFY EMAIL
 app.get('/api/auth/verify/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -165,7 +148,7 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-// LOGIN - checks verification
+// LOGIN
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -276,7 +259,7 @@ app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
   }
 });
 
-// UPDATE POST (Edit)
+// UPDATE POST
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
