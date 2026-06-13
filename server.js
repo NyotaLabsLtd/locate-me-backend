@@ -54,14 +54,28 @@ const generateVerificationToken = () => {
   return crypto.randomBytes(32).toString('hex');
 };
 
+// ==========================================
+// AUTH ROUTES
+// ==========================================
+
 // REGISTER - with email verification LINK
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
+    // Check if user exists
     const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (existingUser.rows.length > 0) return res.status(409).json({ error: 'Email already registered' });
+    
+    // If user exists but is NOT verified, delete them (allow re-registration)
+    if (existingUser.rows.length > 0 && !existingUser.rows[0].is_verified) {
+      await pool.query('DELETE FROM users WHERE email = $1', [email]);
+      console.log(`Deleted unverified user: ${email}`);
+    } 
+    // If user exists and IS verified, reject
+    else if (existingUser.rows.length > 0 && existingUser.rows[0].is_verified) {
+      return res.status(409).json({ error: 'Email already registered. Please log in or use a different email.' });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = generateVerificationToken();
@@ -90,8 +104,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
                 Verify Email Address
               </a>
             </div>
-            <p style="font-size: 14px; color: #666;">Or copy and paste this link into your browser:</p>
-            <p style="font-size: 12px; color: #999; word-break: break-all;">${verificationLink}</p>
             <p style="font-size: 14px; color: #666; margin-top: 30px;">This link will expire in 24 hours.</p>
             <p style="font-size: 14px; color: #666;">If you didn't create this account, please ignore this email.</p>
           </div>
@@ -197,7 +209,10 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
   }
 });
 
-// Middleware
+// ==========================================
+// MIDDLEWARE
+// ==========================================
+
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -209,6 +224,10 @@ const authenticateToken = (req, res, next) => {
     res.status(403).json({ error: 'Invalid or expired token' });
   }
 };
+
+// ==========================================
+// MISSING PERSONS ROUTES
+// ==========================================
 
 // GET ALL MISSING PERSONS
 app.get('/api/missing-persons', generalLimiter, async (req, res) => {
@@ -296,7 +315,10 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// SIGHTINGS
+// ==========================================
+// SIGHTINGS ROUTES
+// ==========================================
+
 app.get('/api/sightings', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sightings ORDER BY created_at DESC');
@@ -322,12 +344,19 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
   }
 });
 
-// ADMIN ROUTE
+// ==========================================
+// ADMIN ROUTES
+// ==========================================
+
 app.get('/api/admin/users', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   const result = await pool.query('SELECT id, email, role, created_at, is_verified FROM users ORDER BY created_at DESC');
   res.json(result.rows);
 });
+
+// ==========================================
+// SERVER START
+// ==========================================
 
 app.get('/', (req, res) => res.send('✅ Locate Me Backend is Running!'));
 
