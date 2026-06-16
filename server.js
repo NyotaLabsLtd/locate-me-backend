@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const cloudinary = require('cloudinary').v2;
+const multer = require('multer');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -23,15 +25,94 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = '384124217618-38rde3tgblslp1s9u3e1fn5tn7h971uk.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// RATE LIMITING
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Too many attempts. Please try again later.' },
+// ==========================================
+// CLOUDINARY CONFIGURATION
+// ==========================================
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Multer configuration for handling file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB max file size
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, and WebP are allowed.'));
+    }
+  }
+});
+
+// ==========================================
+// RATE LIMITING CONFIGURATION
+// ==========================================
+
+// Login: 7 attempts per 10 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 7,
+  message: { error: 'Too many login attempts. Please try again after 10 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
+// Signup: 3 attempts per 10 minutes per IP
+const signupLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 3,
+  message: { error: 'Too many signup attempts. Please try again after 10 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Missing Person Posts: 5 per hour per user
+const postLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'You have reached the maximum limit of 5 posts per hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+});
+
+// Sighting Reports: 5 per hour per user
+const sightingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'You have reached the maximum limit of 5 sighting reports per hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+});
+
+// Cloudinary Uploads: 50 per day per user
+const dailyUploadLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 50,
+  message: { error: 'You have reached the daily upload limit of 50 images.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+});
+
+// Cloudinary Uploads: 10 per hour per user
+const hourlyUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'You have reached the hourly upload limit of 10 images.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+});
+
+// General API limiter
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -48,7 +129,7 @@ const generateVerificationToken = () => {
 // AUTH ROUTES
 // ==========================================
 
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+app.post('/api/auth/register', signupLimiter, async (req, res) => {
   try {
     console.log('📩 Registration attempt for:', req.body.email);
     
@@ -113,7 +194,7 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', authLimiter, async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
@@ -139,7 +220,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/auth/google', authLimiter, async (req, res) => {
+app.post('/api/auth/google', loginLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
@@ -183,6 +264,52 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ==========================================
+// CLOUDINARY UPLOAD ENDPOINT
+// ==========================================
+
+app.post('/api/upload', 
+  authenticateToken, 
+  dailyUploadLimiter, 
+  hourlyUploadLimiter, 
+  upload.single('image'), 
+  async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Upload to Cloudinary using a promise wrapper
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'locate-me/missing-persons',
+          resource_type: 'image',
+          transformation: [
+            { quality: 'auto', fetch_format: 'auto' } // Auto-optimize
+          ]
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      
+      uploadStream.end(req.file.buffer);
+    });
+
+    console.log('✅ Image uploaded to Cloudinary:', result.secure_url);
+    
+    res.json({ 
+      secure_url: result.secure_url,
+      public_id: result.public_id
+    });
+  } catch (err) {
+    console.error('❌ Upload error:', err);
+    res.status(500).json({ error: 'Upload failed: ' + err.message });
+  }
+});
+
+// ==========================================
 // MISSING PERSONS ROUTES
 // ==========================================
 
@@ -196,15 +323,15 @@ app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/missing-persons', authenticateToken, async (req, res) => {
+app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res) => {
   try {
-    const { name, age, gender, last_seen_location, photo_urls, description, notes, residence, police_station, date_missing } = req.body;
+    const { name, age, gender, last_seen_location, photo_urls, description, notes, residence, police_station, date_missing, date_last_seen } = req.body;
     const userId = req.user.id;
     
     const result = await pool.query(
-      `INSERT INTO missing_persons (name, age, gender, last_seen_location, photo_urls, description, notes, residence, police_station, date_missing, user_id) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-      [name, age, gender, last_seen_location, JSON.stringify(photo_urls), description, notes, residence, police_station, date_missing, userId]
+      `INSERT INTO missing_persons (name, age, gender, last_seen_location, photo_urls, description, notes, residence, police_station, date_missing, date_last_seen, user_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [name, age, gender, last_seen_location, JSON.stringify(photo_urls), description, notes, residence, police_station, date_missing, date_last_seen, userId]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -281,7 +408,7 @@ app.get('/api/sightings', generalLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/sightings', authenticateToken, async (req, res) => {
+app.post('/api/sightings', authenticateToken, sightingLimiter, async (req, res) => {
   try {
     const { missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url } = req.body;
     const result = await pool.query(
@@ -300,14 +427,12 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
 // ADMIN ROUTES
 // ==========================================
 
-// Get all users (existing)
 app.get('/api/admin/users', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   const result = await pool.query('SELECT id, email, role, created_at, is_verified FROM users ORDER BY created_at DESC');
   res.json(result.rows);
 });
 
-// ✅ NEW: Get Missing Persons with Poster Email
 app.get('/api/admin/missing-persons', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   
@@ -325,7 +450,6 @@ app.get('/api/admin/missing-persons', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ NEW: Get Sightings with Reporter Email
 app.get('/api/admin/sightings-full', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   
@@ -341,6 +465,30 @@ app.get('/api/admin/sightings-full', authenticateToken, async (req, res) => {
     console.error('Admin sightings error:', err);
     res.status(500).json({ error: 'Failed to fetch sightings' });
   }
+});
+
+// ==========================================
+// ERROR HANDLING
+// ==========================================
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  
+  if (err.message === 'Invalid file type. Only JPEG, PNG, and WebP are allowed.') {
+    return res.status(400).json({ error: err.message });
+  }
+  
+  if (err.name === 'TooManyRequestsError') {
+    return res.status(429).json({ error: err.message });
+  }
+  
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // ==========================================
