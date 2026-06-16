@@ -9,11 +9,16 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors());
+app.use(cors({
+  origin: ['https://locate-me-app.vercel.app', 'http://localhost:3000'],
+  credentials: true
+}));
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 
 // Database connection
 const pool = new Pool({
@@ -213,7 +218,19 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     if (!isValidPassword) return res.status(401).json({ error: 'Invalid email or password' });
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, role: user.role } });
+    
+    // Set HttpOnly cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+    
+    res.json({ 
+      message: 'Login successful', 
+      user: { id: user.id, email: user.email, role: user.role } 
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
@@ -243,22 +260,46 @@ app.post('/api/auth/google', loginLimiter, async (req, res) => {
     }
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ message: 'Google sign-in successful', token, user: { id: user.id, email: user.email, role: user.role, name: user.name, avatar: user.avatar_url } });
+    
+    // Set HttpOnly cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+    
+    res.json({ 
+      message: 'Google sign-in successful', 
+      user: { id: user.id, email: user.email, role: user.role, name: user.name, avatar: user.avatar_url } 
+    });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(401).json({ error: 'Google authentication failed' });
   }
 });
 
+// Logout route
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ message: 'Logged out successfully' });
+});
+
 // Middleware
 const authenticateToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  // Get token from cookie
+  const token = req.cookies.token;
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Access denied. No token provided.' });
+  }
+  
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
   } catch (err) {
+    res.clearCookie('token');
     res.status(403).json({ error: 'Invalid or expired token' });
   }
 };
@@ -285,7 +326,7 @@ app.post('/api/upload',
           folder: 'locate-me/missing-persons',
           resource_type: 'image',
           transformation: [
-            { quality: 'auto', fetch_format: 'auto' } // Auto-optimize
+            { quality: 'auto', fetch_format: 'auto' }
           ]
         },
         (error, result) => {
