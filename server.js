@@ -13,19 +13,19 @@ const cookieParser = require('cookie-parser');
 
 const app = express();
 
-// ==========================================
-// MIDDLEWARE & CONFIGURATION
-// ==========================================
-app.set('trust proxy', 1); // Required for Render to get correct IP for rate limiting
+// Trust proxy for Render
+app.set('trust proxy', 1);
 
-// CORS: Allow frontend to send cookies and make requests
+// CORS Configuration - MUST be before other middleware
 app.use(cors({
-  origin: ['https://locate-me-app.vercel.app', 'http://localhost:3000'],
-  credentials: true 
+  origin: ['https://locate-me-app.vercel.app', 'http://localhost:3000', 'http://localhost:5173'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json({ limit: '10mb' }));
-app.use(cookieParser()); // Reads HttpOnly cookies from incoming requests
+app.use(cookieParser());
 
 // Database connection
 const pool = new Pool({
@@ -44,10 +44,10 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Multer configuration for file uploads (stored in memory temporarily)
+// Multer configuration
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     if (allowedTypes.includes(file.mimetype)) {
@@ -58,42 +58,48 @@ const upload = multer({
   }
 });
 
-// ==========================================
-// RATE LIMITING
-// ==========================================
-const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 7, message: { error: 'Too many login attempts. Please try again after 10 minutes.' }, standardHeaders: true, legacyHeaders: false });
-const signupLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 3, message: { error: 'Too many signup attempts. Please try again after 10 minutes.' }, standardHeaders: true, legacyHeaders: false });
-const postLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: 'You have reached the maximum limit of 5 posts per hour.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
-const sightingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: 'You have reached the maximum limit of 5 sighting reports per hour.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
-const dailyUploadLimiter = rateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 50, message: { error: 'You have reached the daily upload limit of 50 images.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
-const hourlyUploadLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { error: 'You have reached the hourly upload limit of 10 images.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
-const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, message: { error: 'Too many requests. Please slow down.' }, standardHeaders: true, legacyHeaders: false });
+// Rate limiters
+const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 7, message: { error: 'Too many login attempts.' }, standardHeaders: true, legacyHeaders: false });
+const signupLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 3, message: { error: 'Too many signup attempts.' }, standardHeaders: true, legacyHeaders: false });
+const postLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: 'Maximum 5 posts per hour.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
+const sightingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: 'Maximum 5 sightings per hour.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
+const dailyUploadLimiter = rateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 50, message: { error: 'Daily upload limit reached.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
+const hourlyUploadLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { error: 'Hourly upload limit reached.' }, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.user?.id || req.ip });
+const generalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, message: { error: 'Too many requests.' }, standardHeaders: true, legacyHeaders: false });
 
 const generateVerificationToken = () => crypto.randomBytes(32).toString('hex');
 
 // ==========================================
-// AUTHENTICATION MIDDLEWARE
+// AUTH MIDDLEWARE (UPDATED WITH DEBUGGING)
 // ==========================================
 const authenticateToken = (req, res, next) => {
-  // Read token from HttpOnly cookie instead of headers
   const token = req.cookies.token;
-  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  
+  // Debug logging
+  console.log('🔐 Auth attempt - Cookies:', req.cookies);
+  console.log('🔐 Token found:', token ? 'YES' : 'NO');
+  
+  if (!token) {
+    console.log('❌ No token provided in cookies');
+    return res.status(401).json({ error: 'Access denied. No token provided.' });
+  }
   
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
+    console.log('✅ Token verified for user:', decoded.email);
     next();
   } catch (err) {
+    console.log('❌ Invalid token:', err.message);
     res.clearCookie('token');
     res.status(403).json({ error: 'Invalid or expired token' });
   }
 };
 
 // ==========================================
-// AUTH ROUTES
+// AUTH ROUTES (UPDATED COOKIE SETTINGS)
 // ==========================================
 
-// Register
 app.post('/api/auth/register', signupLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -121,7 +127,6 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
   }
 });
 
-// Verify Email
 app.get('/api/auth/verify/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -138,37 +143,55 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-// Login
+// LOGIN ROUTE - FIXED COOKIE SETTINGS
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log('📩 Login attempt for:', email);
+    
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
+    if (result.rows.length === 0) {
+      console.log('❌ User not found');
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
     
     const user = result.rows[0];
-    if (!user.is_verified) return res.status(403).json({ error: 'Please verify your email before logging in.', unverified: true });
+    if (!user.is_verified) {
+      console.log('❌ Email not verified');
+      return res.status(403).json({ error: 'Please verify your email before logging in.', unverified: true });
+    }
     
     const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!isValidPassword) {
+      console.log('❌ Invalid password');
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
     
-    // Set secure HttpOnly cookie
+    // Set cookie with proper settings for cross-origin
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // true in production (HTTPS)
-      sameSite: 'none', // Required for cross-origin requests (Vercel -> Render)
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      secure: true, // MUST be true for cross-origin cookies
+      sameSite: 'none', // Required for cross-origin
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: '/', // Make cookie available everywhere
+      domain: '.onrender.com' // Explicitly set domain
     });
     
-    res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: user.role } });
+    console.log('✅ Login successful, cookie set for:', user.email);
+    res.json({ 
+      message: 'Login successful', 
+      user: { id: user.id, email: user.email, role: user.role },
+      cookieSet: true
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// Google Login
+// GOOGLE LOGIN - FIXED COOKIE SETTINGS
 app.post('/api/auth/google', loginLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
@@ -195,21 +218,26 @@ app.post('/api/auth/google', loginLimiter, async (req, res) => {
     
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'none',
-      maxAge: 30 * 24 * 60 * 60 * 1000
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/',
+      domain: '.onrender.com'
     });
     
-    res.json({ message: 'Google sign-in successful', user: { id: user.id, email: user.email, role: user.role, name: user.name, avatar: user.avatar_url } });
+    res.json({ 
+      message: 'Google sign-in successful', 
+      user: { id: user.id, email: user.email, role: user.role, name: user.name, avatar: user.avatar_url },
+      cookieSet: true
+    });
   } catch (err) {
     console.error('Google auth error:', err);
     res.status(401).json({ error: 'Google authentication failed' });
   }
 });
 
-// Logout
 app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', { path: '/', domain: '.onrender.com' });
   res.json({ message: 'Logged out successfully' });
 });
 
@@ -239,7 +267,6 @@ app.post('/api/upload', authenticateToken, dailyUploadLimiter, hourlyUploadLimit
 // MISSING PERSONS ROUTES
 // ==========================================
 
-// Get all missing persons (Public)
 app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM missing_persons ORDER BY date_missing DESC');
@@ -250,7 +277,6 @@ app.get('/api/missing-persons', generalLimiter, async (req, res) => {
   }
 });
 
-// Create missing person (Protected)
 app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res) => {
   try {
     const { name, age, gender, last_seen_location, photo_urls, description, notes, residence, police_station, date_missing, date_last_seen } = req.body;
@@ -267,31 +293,30 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
   }
 });
 
-// Get current user's posts (Protected)
+// MY POSTS - This is the route that's failing
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
   try {
+    console.log('📋 Fetching posts for user:', req.user.email);
     const result = await pool.query('SELECT * FROM missing_persons WHERE user_id = $1 ORDER BY date_missing DESC', [req.user.id]);
+    console.log('✅ Found', result.rows.length, 'posts');
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching posts:', err);
     res.status(500).json({ error: 'Failed to fetch posts' });
   }
 });
 
-// Update missing person (Protected) - NOW INCLUDES ALL FIELDS INCLUDING DATE LAST SEEN
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, age, gender, last_seen_location, description, notes, residence, police_station, date_last_seen } = req.body;
     
-    // Check ownership
     const check = await pool.query('SELECT user_id FROM missing_persons WHERE id = $1', [id]);
     if (check.rows.length === 0) return res.status(404).json({ error: 'Post not found' });
     if (check.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Unauthorized to edit this post' });
     }
 
-    // Update all editable fields
     await pool.query(
       `UPDATE missing_persons 
        SET name=$1, age=$2, gender=$3, last_seen_location=$4, description=$5, notes=$6, residence=$7, police_station=$8, date_last_seen=$9 
@@ -305,7 +330,6 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Delete missing person (Protected)
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -387,7 +411,7 @@ app.get('/api/admin/sightings-full', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// ERROR HANDLING & SERVER START
+// ERROR HANDLING
 // ==========================================
 
 app.use((err, req, res, next) => {
@@ -398,6 +422,15 @@ app.use((err, req, res, next) => {
   if (err.message === 'Invalid file type. Only JPEG, PNG, and WebP are allowed.') return res.status(400).json({ error: err.message });
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
+});
+
+// Test route
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'Backend is working!', 
+    cookies: req.cookies,
+    hasToken: !!req.cookies.token
+  });
 });
 
 app.get('/', (req, res) => res.send('✅ Locate Me Backend is Running!'));
