@@ -545,9 +545,13 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
             [exactStationName]
         );
 
-        // 4. Fetch Sightings for this specific station
+        // 4. Fetch Sightings for this specific station WITH POSTER EMAIL
         const sightingsResult = await pool.query(
-            'SELECT * FROM sightings WHERE police_station = $1 ORDER BY created_at DESC', 
+            `SELECT s.*, u.email as poster_email 
+             FROM sightings s 
+             LEFT JOIN users u ON s.user_id = u.id 
+             WHERE s.police_station = $1 
+             ORDER BY s.created_at DESC`, 
             [exactStationName]
         );
 
