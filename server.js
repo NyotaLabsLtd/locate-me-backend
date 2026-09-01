@@ -535,9 +535,13 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
 
         console.log(`Fetching data for station: ${exactStationName}`);
 
-        // 3. Fetch Missing Persons for this specific station
+        // 3. Fetch Missing Persons for this specific station WITH POSTER EMAIL
         const missingResult = await pool.query(
-            'SELECT * FROM missing_persons WHERE police_station = $1 ORDER BY date_missing DESC', 
+            `SELECT mp.*, u.email as poster_email 
+             FROM missing_persons mp 
+             LEFT JOIN users u ON mp.user_id = u.id 
+             WHERE mp.police_station = $1 
+             ORDER BY mp.date_missing DESC`, 
             [exactStationName]
         );
 
