@@ -375,6 +375,28 @@ app.get('/api/missing-persons/resolved', authenticateToken, async (req, res) => 
     }
 });
 
+// ==========================================
+// PUBLIC ENDPOINT FOR FOUND PERSONS (NO CONTACT INFO)
+// ==========================================
+app.get('/api/missing-persons/resolved-public', async (req, res) => {
+    try {
+        // Fetch resolved cases WITHOUT sensitive information (no poster_email)
+        const result = await pool.query(`
+            SELECT id, name, age, gender, photo_urls, last_seen_location, 
+                   date_missing, date_last_seen, resolved_at, police_station, 
+                   description, notes, residence, status
+            FROM missing_persons 
+            WHERE status = 'resolved' 
+            ORDER BY resolved_at DESC
+        `);
+        
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch resolved public error:', err);
+        res.status(500).json({ error: 'Failed to fetch found persons' });
+    }
+});
+
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -635,7 +657,7 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 10. REPORT GENERATION ROUTES (NEW)
+// 10. REPORT GENERATION ROUTES
 // ==========================================
 
 app.get('/api/reports/monthly-missing', authenticateToken, async (req, res) => {
