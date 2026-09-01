@@ -206,7 +206,7 @@ app.get('/api/auth/verify/:token', async (req, res) => {
 // Get all missing persons - NO RATE LIMIT, NO AUTH REQUIRED
 app.get('/api/missing-persons', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM missing_persons ORDER BY date_missing DESC');
+        const result = await pool.query('SELECT * FROM missing_persons WHERE status = \'active\' ORDER BY date_missing DESC');
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch missing persons error:', err);
@@ -219,7 +219,7 @@ app.get('/api/missing-persons/station/:stationId', authenticateToken, async (req
     try {
         const { stationId } = req.params;
         const result = await pool.query(
-            'SELECT * FROM missing_persons WHERE police_station = $1 ORDER BY date_missing DESC',
+            'SELECT * FROM missing_persons WHERE police_station = $1 AND status = \'active\' ORDER BY date_missing DESC',
             [stationId]
         );
         res.json(result.rows);
@@ -285,8 +285,8 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
         const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls } = req.body;
         
         const result = await pool.query(
-            `INSERT INTO missing_persons (user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+            `INSERT INTO missing_persons (user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, status) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active') RETURNING *`,
             [req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls)]
         );
         res.status(201).json(result.rows[0]);
@@ -316,6 +316,68 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('Update missing person error:', err);
         res.status(500).json({ error: 'Failed to update post' });
+    }
+});
+
+// NEW: Mark as Found/Resolved
+app.put('/api/missing-persons/:id/mark-found', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { resolution_notes } = req.body;
+        
+        const result = await pool.query(
+            `UPDATE missing_persons SET status = 'resolved', resolved_at = NOW(), resolution_notes = $1 
+             WHERE id = $2 RETURNING *`,
+            [resolution_notes || 'Case resolved', id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Case not found' });
+        }
+        
+        res.json({ message: 'Case marked as found', case: result.rows[0] });
+    } catch (err) {
+        console.error('Mark as found error:', err);
+        res.status(500).json({ error: 'Failed to mark case as found' });
+    }
+});
+
+// NEW: Get Resolved Cases
+app.get('/api/missing-persons/resolved', authenticateToken, async (req, res) => {
+    try {
+        const userStationId = req.user.station_id;
+        
+        if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
+            return res.status(403).json({ error: 'User is not assigned to a police station.' });
+        }
+
+        const stationMap = {
+            'RUI-2026-001': 'Ruiru Police Station',
+            'KAS-2026-001': 'Kasarani Police Station',
+            'NRB-2026-001': 'Central Police Station',
+            'KIL-2026-001': 'Kilimani Police Station',
+            'WES-2026-001': 'Westlands Police Station',
+            'LAN-2026-001': "Lang'ata Police Station",
+            'EMB-2026-001': 'Embakasi Police Station',
+            'PAR-2026-001': 'Parklands police station',
+            'KAR-2026-001': 'Karen Police Station.'
+        };
+
+        const exactStationName = stationMap[userStationId];
+
+        const result = await pool.query(
+            `SELECT mp.*, u.email as poster_email 
+             FROM missing_persons mp 
+             LEFT JOIN users u ON mp.user_id = u.id 
+             WHERE mp.police_station = $1 AND mp.status = 'resolved'
+             ORDER BY mp.resolved_at DESC`,
+            [exactStationName]
+        );
+        
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch resolved cases error:', err);
+        res.status(500).json({ error: 'Failed to fetch resolved cases' });
     }
 });
 
@@ -391,7 +453,7 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
 
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM missing_persons WHERE user_id = $1 ORDER BY date_missing DESC', [req.user.id]);
+        const result = await pool.query('SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', [req.user.id]);
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch my posts error:', err);
@@ -477,6 +539,7 @@ app.get('/api/admin/missing-persons', authenticateToken, requireAdmin, async (re
             SELECT mp.*, u.email as poster_email 
             FROM missing_persons mp 
             JOIN users u ON mp.user_id = u.id 
+            WHERE mp.status = 'active'
             ORDER BY mp.date_missing DESC
         `);
         res.json(result.rows);
@@ -535,17 +598,17 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
 
         console.log(`Fetching data for station: ${exactStationName}`);
 
-        // 3. Fetch Missing Persons for this specific station WITH POSTER EMAIL
+        // 3. Fetch Missing Persons for this specific station WITH POSTER EMAIL (only active cases)
         const missingResult = await pool.query(
             `SELECT mp.*, u.email as poster_email 
              FROM missing_persons mp 
              LEFT JOIN users u ON mp.user_id = u.id 
-             WHERE mp.police_station = $1 
+             WHERE mp.police_station = $1 AND mp.status = 'active'
              ORDER BY mp.date_missing DESC`, 
             [exactStationName]
         );
 
-        // 4. Fetch Sightings for this specific station WITH POSTER EMAIL
+        // 4. Fetch Sightings for this specific station
         const sightingsResult = await pool.query(
             `SELECT s.*, u.email as poster_email 
              FROM sightings s 
@@ -555,11 +618,28 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
             [exactStationName]
         );
 
-        // 5. Send the filtered data back
+        // 5. Fetch Resolved Cases Count
+        const resolvedResult = await pool.query(
+            `SELECT COUNT(*) FROM missing_persons 
+             WHERE police_station = $1 AND status = 'resolved' AND resolved_at >= NOW() - INTERVAL '30 days'`,
+            [exactStationName]
+        );
+
+        // 6. Count Critical Cases (age <= 18 OR description contains 'kidnapped')
+        const criticalResult = await pool.query(
+            `SELECT COUNT(*) FROM missing_persons 
+             WHERE police_station = $1 AND status = 'active' 
+             AND (age <= 18 OR LOWER(description) LIKE '%kidnapped%')`,
+            [exactStationName]
+        );
+
+        // 7. Send the filtered data back
         res.json({
             missingPersons: missingResult.rows,
             sightings: sightingsResult.rows,
-            stationName: exactStationName
+            stationName: exactStationName,
+            resolvedThisMonth: parseInt(resolvedResult.rows[0].count),
+            criticalCases: parseInt(criticalResult.rows[0].count)
         });
 
     } catch (err) {
