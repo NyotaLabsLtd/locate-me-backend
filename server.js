@@ -386,22 +386,6 @@ app.get('/api/missing-persons/resolved-public', async (req, res) => {
     }
 });
 
-app.get('/api/sightings/public', async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT id, missing_person_name, gender, sighting_location, sighting_time, 
-                   photo_url, police_station, description, created_at 
-            FROM sightings 
-            ORDER BY created_at DESC
-        `);
-        
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Fetch public sightings error:', err);
-        res.status(500).json({ error: 'Failed to fetch sightings' });
-    }
-});
-
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -431,6 +415,22 @@ app.get('/api/sightings', async (req, res) => {
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch sightings error:', err);
+        res.status(500).json({ error: 'Failed to fetch sightings' });
+    }
+});
+
+app.get('/api/sightings/public', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT id, missing_person_name, gender, sighting_location, sighting_time, 
+                   photo_url, police_station, description, created_at 
+            FROM sightings 
+            ORDER BY created_at DESC
+        `);
+        
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch public sightings error:', err);
         res.status(500).json({ error: 'Failed to fetch sightings' });
     }
 });
@@ -474,17 +474,21 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
 // UPDATED: Fetch both missing persons AND sightings for user
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
+        console.log('Fetching posts for user:', req.user.id);
+        
         // Fetch user's missing persons
         const missingResult = await pool.query(
             'SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', 
             [req.user.id]
         );
+        console.log('Missing persons found:', missingResult.rows.length);
         
         // Fetch user's sightings
         const sightingsResult = await pool.query(
             'SELECT * FROM sightings WHERE user_id = $1 ORDER BY created_at DESC', 
             [req.user.id]
         );
+        console.log('Sightings found:', sightingsResult.rows.length);
         
         // Combine both with a type indicator
         const combinedPosts = [
@@ -499,6 +503,7 @@ app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
             return dateB - dateA;
         });
         
+        console.log('Total posts returned:', combinedPosts.length);
         res.json(combinedPosts);
     } catch (err) {
         console.error('Fetch my posts error:', err);
