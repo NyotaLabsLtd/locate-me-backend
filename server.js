@@ -14,7 +14,6 @@ const app = express();
 // 1. CONFIGURATION & MIDDLEWARE
 // ==========================================
 
-// CORS: Allow requests from ALL origins
 app.use(cors({
     origin: '*', 
     credentials: true
@@ -22,27 +21,23 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
-// Database Connection (Neon PostgreSQL)
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-// Cloudinary Configuration
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
 // 2. SECURITY MIDDLEWARE
 // ==========================================
 
-// Rate Limiters - ONLY for specific actions (NOT for data fetching)
 const loginLimiter = rateLimit({ 
     windowMs: 10 * 60 * 1000, 
     max: 7, 
@@ -61,11 +56,9 @@ const postLimiter = rateLimit({
     message: { error: 'Too many posts. Try again in 1 hour.' } 
 });
 
-// Apply limiters ONLY where needed (Auth and Creating Posts)
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/register', registerLimiter);
 
-// Authentication Middleware
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -375,12 +368,8 @@ app.get('/api/missing-persons/resolved', authenticateToken, async (req, res) => 
     }
 });
 
-// ==========================================
-// PUBLIC ENDPOINT FOR FOUND PERSONS (NO CONTACT INFO)
-// ==========================================
 app.get('/api/missing-persons/resolved-public', async (req, res) => {
     try {
-        // Fetch resolved cases WITHOUT sensitive information (no poster_email)
         const result = await pool.query(`
             SELECT id, name, age, gender, photo_urls, last_seen_location, 
                    date_missing, date_last_seen, resolved_at, police_station, 
@@ -397,12 +386,8 @@ app.get('/api/missing-persons/resolved-public', async (req, res) => {
     }
 });
 
-// ==========================================
-// PUBLIC ENDPOINT FOR SIGHTINGS (NO REPORTER CONTACT INFO)
-// ==========================================
 app.get('/api/sightings/public', async (req, res) => {
     try {
-        // Fetch sightings WITHOUT reporter contact info for privacy
         const result = await pool.query(`
             SELECT id, missing_person_name, gender, sighting_location, sighting_time, 
                    photo_url, police_station, description, created_at 
