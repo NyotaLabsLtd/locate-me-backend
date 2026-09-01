@@ -397,6 +397,26 @@ app.get('/api/missing-persons/resolved-public', async (req, res) => {
     }
 });
 
+// ==========================================
+// PUBLIC ENDPOINT FOR SIGHTINGS (NO REPORTER CONTACT INFO)
+// ==========================================
+app.get('/api/sightings/public', async (req, res) => {
+    try {
+        // Fetch sightings WITHOUT reporter contact info for privacy
+        const result = await pool.query(`
+            SELECT id, missing_person_name, gender, sighting_location, sighting_time, 
+                   photo_url, police_station, description, created_at 
+            FROM sightings 
+            ORDER BY created_at DESC
+        `);
+        
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch public sightings error:', err);
+        res.status(500).json({ error: 'Failed to fetch sightings' });
+    }
+});
+
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
