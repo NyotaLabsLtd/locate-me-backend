@@ -486,10 +486,35 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
 // 6. USER ROUTES
 // ==========================================
 
+// UPDATED: Fetch both missing persons AND sightings for user
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', [req.user.id]);
-        res.json(result.rows);
+        // Fetch user's missing persons
+        const missingResult = await pool.query(
+            'SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', 
+            [req.user.id]
+        );
+        
+        // Fetch user's sightings
+        const sightingsResult = await pool.query(
+            'SELECT * FROM sightings WHERE user_id = $1 ORDER BY created_at DESC', 
+            [req.user.id]
+        );
+        
+        // Combine both with a type indicator
+        const combinedPosts = [
+            ...missingResult.rows.map(p => ({ ...p, post_type: 'missing' })),
+            ...sightingsResult.rows.map(s => ({ ...s, post_type: 'sighting' }))
+        ];
+        
+        // Sort by date (most recent first)
+        combinedPosts.sort((a, b) => {
+            const dateA = a.post_type === 'missing' ? new Date(a.date_missing) : new Date(a.created_at);
+            const dateB = b.post_type === 'missing' ? new Date(b.date_missing) : new Date(b.created_at);
+            return dateB - dateA;
+        });
+        
+        res.json(combinedPosts);
     } catch (err) {
         console.error('Fetch my posts error:', err);
         res.status(500).json({ error: 'Failed to fetch your posts' });
