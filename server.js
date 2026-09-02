@@ -285,12 +285,13 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
     }
 });
 
+// FIXED: Update route now handles empty dates and integer age to prevent SQL crash
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         let { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station } = req.body;
         
-        // FIX: Prevent SQL crash on empty date or invalid age
+        // Fix data types to prevent SQL crash
         age = age ? parseInt(age) : null;
         if (date_last_seen === '') date_last_seen = null;
 
@@ -471,43 +472,56 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// NEW: Update Sighting Route (Fixes the "Update failed" error for sightings)
+app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, police_station } = req.body;
+        
+        const sighting = await pool.query('SELECT * FROM sightings WHERE id = $1', [id]);
+        if (sighting.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
+        if (sighting.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+
+        const result = await pool.query(
+            `UPDATE sightings SET missing_person_name=$1, gender=$2, sighting_location=$3, sighting_time=$4, description=$5, reporter_name=$6, reporter_contact=$7, police_station=$8 WHERE id=$9 RETURNING *`,
+            [missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, police_station, id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Update sighting error:', err);
+        res.status(500).json({ error: 'Failed to update sighting' });
+    }
+});
+
 // ==========================================
 // 6. USER ROUTES
 // ==========================================
 
-// UPDATED: Fetch both missing persons AND sightings for user
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
-        console.log('Fetching posts for user:', req.user.id);
-        
-        // Fetch user's missing persons
         const missingResult = await pool.query(
             'SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', 
             [req.user.id]
         );
-        console.log('Missing persons found:', missingResult.rows.length);
         
-        // Fetch user's sightings
         const sightingsResult = await pool.query(
             'SELECT * FROM sightings WHERE user_id = $1 ORDER BY created_at DESC', 
             [req.user.id]
         );
-        console.log('Sightings found:', sightingsResult.rows.length);
         
-        // Combine both with a type indicator
         const combinedPosts = [
             ...missingResult.rows.map(p => ({ ...p, post_type: 'missing' })),
             ...sightingsResult.rows.map(s => ({ ...s, post_type: 'sighting' }))
         ];
         
-        // Sort by date (most recent first)
         combinedPosts.sort((a, b) => {
             const dateA = a.post_type === 'missing' ? new Date(a.date_missing) : new Date(a.created_at);
             const dateB = b.post_type === 'missing' ? new Date(b.date_missing) : new Date(b.created_at);
             return dateB - dateA;
         });
         
-        console.log('Total posts returned:', combinedPosts.length);
         res.json(combinedPosts);
     } catch (err) {
         console.error('Fetch my posts error:', err);
@@ -647,8 +661,6 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
         if (!exactStationName) {
             return res.status(400).json({ error: 'Unknown station ID.' });
         }
-
-        console.log(`Fetching data for station: ${exactStationName}`);
 
         const missingResult = await pool.query(
             `SELECT mp.*, u.email as poster_email 
