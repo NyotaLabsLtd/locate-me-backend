@@ -7,6 +7,7 @@ const { Pool } = require('pg');
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const { v4: uuidv4 } = require('uuid'); // NEW: Import UUID generator
 
 const app = express();
 
@@ -94,9 +95,11 @@ app.post('/api/auth/register', async (req, res) => {
         if (existingUser.rows.length > 0) return res.status(409).json({ error: 'Email already registered' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        const newUserId = uuidv4(); // NEW: Generate UUID for user
+        
         const newUser = await pool.query(
-            'INSERT INTO users (email, password, role, is_verified) VALUES ($1, $2, $3, $4) RETURNING id, email, role, is_verified',
-            [email, hashedPassword, 'user', false]
+            'INSERT INTO users (id, email, password, role, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, role, is_verified',
+            [newUserId, email, hashedPassword, 'user', false]
         );
 
         const token = jwt.sign({ id: newUser.rows[0].id, email: newUser.rows[0].email }, process.env.JWT_SECRET, { expiresIn: '24h' });
@@ -159,9 +162,10 @@ app.post('/api/auth/google', async (req, res) => {
         let user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         
         if (user.rows.length === 0) {
+            const newUserId = uuidv4(); // NEW: Generate UUID
             user = await pool.query(
-                'INSERT INTO users (email, password, role, is_verified) VALUES ($1, $2, $3, $4) RETURNING id, email, role',
-                [email, 'google_auth', 'user', true]
+                'INSERT INTO users (id, email, password, role, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, role',
+                [newUserId, email, 'google_auth', 'user', true]
             );
         }
 
@@ -272,11 +276,12 @@ app.get('/api/police-stations', async (req, res) => {
 app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res) => {
     try {
         const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls } = req.body;
+        const newPostId = uuidv4(); // NEW: Generate UUID for the post
         
         const result = await pool.query(
-            `INSERT INTO missing_persons (user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, status) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active') RETURNING *`,
-            [req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls)]
+            `INSERT INTO missing_persons (id, user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, status) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active') RETURNING *`,
+            [newPostId, req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls)]
         );
         res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -285,13 +290,11 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
     }
 });
 
-// FIXED: Update route now handles empty dates and integer age to prevent SQL crash
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         let { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station } = req.body;
         
-        // Fix data types to prevent SQL crash
         age = age ? parseInt(age) : null;
         if (date_last_seen === '') date_last_seen = null;
 
@@ -443,11 +446,12 @@ app.get('/api/sightings/public', async (req, res) => {
 app.post('/api/sightings', authenticateToken, async (req, res) => {
     try {
         const { missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station } = req.body;
+        const newSightingId = uuidv4(); // NEW: Generate UUID for the sighting
         
         const result = await pool.query(
-            `INSERT INTO sightings (user_id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [req.user.id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station]
+            `INSERT INTO sightings (id, user_id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+            [newSightingId, req.user.id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station]
         );
         res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -456,23 +460,6 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
     }
 });
 
-app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const sighting = await pool.query('SELECT * FROM sightings WHERE id = $1', [id]);
-        if (sighting.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
-        if (sighting.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Not authorized' });
-        }
-        await pool.query('DELETE FROM sightings WHERE id = $1', [id]);
-        res.json({ message: 'Sighting deleted' });
-    } catch (err) {
-        console.error('Delete sighting error:', err);
-        res.status(500).json({ error: 'Failed to delete sighting' });
-    }
-});
-
-// NEW: Update Sighting Route (Fixes the "Update failed" error for sightings)
 app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -495,12 +482,30 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const sighting = await pool.query('SELECT * FROM sightings WHERE id = $1', [id]);
+        if (sighting.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
+        if (sighting.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Not authorized' });
+        }
+        await pool.query('DELETE FROM sightings WHERE id = $1', [id]);
+        res.json({ message: 'Sighting deleted' });
+    } catch (err) {
+        console.error('Delete sighting error:', err);
+        res.status(500).json({ error: 'Failed to delete sighting' });
+    }
+});
+
 // ==========================================
 // 6. USER ROUTES
 // ==========================================
 
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
+        console.log('Fetching posts for user:', req.user.id);
+        
         const missingResult = await pool.query(
             'SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', 
             [req.user.id]
@@ -522,6 +527,7 @@ app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
             return dateB - dateA;
         });
         
+        console.log('Total posts returned:', combinedPosts.length);
         res.json(combinedPosts);
     } catch (err) {
         console.error('Fetch my posts error:', err);
@@ -661,6 +667,8 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
         if (!exactStationName) {
             return res.status(400).json({ error: 'Unknown station ID.' });
         }
+
+        console.log(`Fetching data for station: ${exactStationName}`);
 
         const missingResult = await pool.query(
             `SELECT mp.*, u.email as poster_email 
