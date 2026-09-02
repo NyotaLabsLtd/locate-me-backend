@@ -7,7 +7,7 @@ const { Pool } = require('pg');
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
-const { v4: uuidv4 } = require('uuid'); // NEW: Import UUID generator
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 
@@ -95,7 +95,7 @@ app.post('/api/auth/register', async (req, res) => {
         if (existingUser.rows.length > 0) return res.status(409).json({ error: 'Email already registered' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newUserId = uuidv4(); // NEW: Generate UUID for user
+        const newUserId = uuidv4();
         
         const newUser = await pool.query(
             'INSERT INTO users (id, email, password, role, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, role, is_verified',
@@ -162,7 +162,7 @@ app.post('/api/auth/google', async (req, res) => {
         let user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         
         if (user.rows.length === 0) {
-            const newUserId = uuidv4(); // NEW: Generate UUID
+            const newUserId = uuidv4();
             user = await pool.query(
                 'INSERT INTO users (id, email, password, role, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, role',
                 [newUserId, email, 'google_auth', 'user', true]
@@ -276,7 +276,7 @@ app.get('/api/police-stations', async (req, res) => {
 app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res) => {
     try {
         const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls } = req.body;
-        const newPostId = uuidv4(); // NEW: Generate UUID for the post
+        const newPostId = uuidv4();
         
         const result = await pool.query(
             `INSERT INTO missing_persons (id, user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, status) 
@@ -446,7 +446,7 @@ app.get('/api/sightings/public', async (req, res) => {
 app.post('/api/sightings', authenticateToken, async (req, res) => {
     try {
         const { missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station } = req.body;
-        const newSightingId = uuidv4(); // NEW: Generate UUID for the sighting
+        const newSightingId = uuidv4();
         
         const result = await pool.query(
             `INSERT INTO sightings (id, user_id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station) 
@@ -575,11 +575,47 @@ app.post('/api/upload', authenticateToken, upload.single('image'), async (req, r
 
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, email, role, is_verified, created_at FROM users ORDER BY created_at DESC');
+        // UPDATED: Added station_id to the SELECT query
+        const result = await pool.query('SELECT id, email, role, is_verified, created_at, station_id FROM users ORDER BY created_at DESC');
         res.json(result.rows);
     } catch (err) {
         console.error('Admin fetch users error:', err);
         res.status(500).json({ error: 'Failed to fetch users' });
+    }
+});
+
+// NEW: Create Police User Route
+app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { email, password, station_id } = req.body;
+        
+        if (!email || !password || !station_id) {
+            return res.status(400).json({ error: 'Email, password, and station ID are required' });
+        }
+
+        // Check if user already exists
+        const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        if (existingUser.rows.length > 0) {
+            return res.status(409).json({ error: 'Email already registered' });
+        }
+
+        // Hash the password and generate UUID
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUserId = uuidv4();
+
+        // Insert into database (role is 'police', is_verified is true so they can login immediately)
+        const newUser = await pool.query(
+            'INSERT INTO users (id, email, password, role, station_id, is_verified) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, role, station_id',
+            [newUserId, email, hashedPassword, 'police', station_id, true]
+        );
+
+        res.status(201).json({
+            message: 'Police user created successfully',
+            user: newUser.rows[0]
+        });
+    } catch (err) {
+        console.error('Create police user error:', err);
+        res.status(500).json({ error: 'Failed to create user' });
     }
 });
 
