@@ -288,8 +288,12 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
 app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station } = req.body;
+        let { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station } = req.body;
         
+        // FIX: Prevent SQL crash on empty date or invalid age
+        age = age ? parseInt(age) : null;
+        if (date_last_seen === '') date_last_seen = null;
+
         const post = await pool.query('SELECT * FROM missing_persons WHERE id = $1', [id]);
         if (post.rows.length === 0) return res.status(404).json({ error: 'Post not found' });
         if (post.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
