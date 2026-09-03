@@ -482,6 +482,57 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// NEW: Route to mark a sighting as resolved
+app.put('/api/sightings/:id/resolve', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(
+            "UPDATE sightings SET status = 'resolved', resolved_at = NOW() WHERE id = $1 RETURNING *", 
+            [id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
+        res.json({ message: 'Sighting resolved', case: result.rows[0] });
+    } catch (err) {
+        console.error('Resolve sighting error:', err);
+        res.status(500).json({ error: 'Failed to resolve sighting' });
+    }
+});
+
+// NEW: Get resolved sightings for the dashboard
+app.get('/api/sightings/resolved', authenticateToken, async (req, res) => {
+    try {
+        const userStationId = req.user.station_id;
+        if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
+            return res.status(403).json({ error: 'User is not assigned to a police station.' });
+        }
+
+        const stationMap = {
+            'RUI-2026-001': 'Ruiru Police Station',
+            'KAS-2026-001': 'Kasarani Police Station',
+            'NRB-2026-001': 'Central Police Station',
+            'KIL-2026-001': 'Kilimani Police Station',
+            'WES-2026-001': 'Westlands Police Station',
+            'LAN-2026-001': "Lang'ata Police Station",
+            'EMB-2026-001': 'Embakasi Police Station',
+            'PAR-2026-001': 'Parklands police station',
+            'KAR-2026-001': 'Karen Police Station.'
+        };
+
+        const exactStationName = stationMap[userStationId];
+
+        const result = await pool.query(
+            `SELECT * FROM sightings 
+             WHERE police_station = $1 AND status = 'resolved' 
+             ORDER BY resolved_at DESC`,
+            [exactStationName]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch resolved sightings error:', err);
+        res.status(500).json({ error: 'Failed to fetch resolved sightings' });
+    }
+});
+
 app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -575,7 +626,6 @@ app.post('/api/upload', authenticateToken, upload.single('image'), async (req, r
 
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        // UPDATED: Added station_id to the SELECT query
         const result = await pool.query('SELECT id, email, role, is_verified, created_at, station_id FROM users ORDER BY created_at DESC');
         res.json(result.rows);
     } catch (err) {
@@ -584,7 +634,6 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     }
 });
 
-// NEW: Create Police User Route
 app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { email, password, station_id } = req.body;
@@ -593,17 +642,14 @@ app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async
             return res.status(400).json({ error: 'Email, password, and station ID are required' });
         }
 
-        // Check if user already exists
         const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (existingUser.rows.length > 0) {
             return res.status(409).json({ error: 'Email already registered' });
         }
 
-        // Hash the password and generate UUID
         const hashedPassword = await bcrypt.hash(password, 10);
         const newUserId = uuidv4();
 
-        // Insert into database (role is 'police', is_verified is true so they can login immediately)
         const newUser = await pool.query(
             'INSERT INTO users (id, email, password, role, station_id, is_verified) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, role, station_id',
             [newUserId, email, hashedPassword, 'police', station_id, true]
@@ -715,11 +761,12 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
             [exactStationName]
         );
 
+        // UPDATED: Only fetch PENDING sightings
         const sightingsResult = await pool.query(
             `SELECT s.*, u.email as poster_email 
              FROM sightings s 
              LEFT JOIN users u ON s.user_id = u.id 
-             WHERE s.police_station = $1 
+             WHERE s.police_station = $1 AND (s.status IS NULL OR s.status = 'pending')
              ORDER BY s.created_at DESC`, 
             [exactStationName]
         );
