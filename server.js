@@ -83,6 +83,23 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ==========================================
+// 2.5. AUDIT LOGGING HELPER (ADDED)
+// ==========================================
+async function logAudit(userId, action, targetType, targetId, details, ipAddress) {
+    try {
+        await pool.query(
+            `INSERT INTO audit_logs (user_id, action, target_type, target_id, details, ip_address) 
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [userId, action, targetType, targetId, details, ipAddress]
+        );
+        console.log(`[AUDIT] ${action} by User ${userId}`);
+    } catch (err) {
+        console.error('Audit log error:', err);
+        // We don't throw here so the main action doesn't fail if logging fails
+    }
+}
+
+// ==========================================
 // 3. AUTH ROUTES
 // ==========================================
 
@@ -120,10 +137,18 @@ app.post('/api/auth/login', async (req, res) => {
         const { email, password } = req.body;
         const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         
-        if (user.rows.length === 0) return res.status(400).json({ error: 'Invalid email or password' });
+        if (user.rows.length === 0) {
+            // --- AUDIT LOG ADDED ---
+            await logAudit(null, 'LOGIN_FAILED', 'user', null, `Failed login attempt for ${email}`, req.ip);
+            return res.status(400).json({ error: 'Invalid email or password' });
+        }
         
         const validPassword = await bcrypt.compare(password, user.rows[0].password);
-        if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
+        if (!validPassword) {
+            // --- AUDIT LOG ADDED ---
+            await logAudit(user.rows[0].id, 'LOGIN_FAILED', 'user', user.rows[0].id, 'Invalid password', req.ip);
+            return res.status(400).json({ error: 'Invalid email or password' });
+        }
 
         if (!user.rows[0].is_verified) return res.status(403).json({ error: 'Please verify your email first', unverified: true });
 
@@ -137,6 +162,9 @@ app.post('/api/auth/login', async (req, res) => {
             process.env.JWT_SECRET, 
             { expiresIn: '30d' }
         );
+
+        // --- AUDIT LOG ADDED ---
+        await logAudit(user.rows[0].id, 'LOGIN', 'user', user.rows[0].id, `Logged in as ${user.rows[0].role}`, req.ip);
 
         res.json({ 
             token, 
@@ -283,6 +311,10 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active') RETURNING *`,
             [newPostId, req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls)]
         );
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'CREATE_POST', 'missing_person', newPostId, `Created post: ${name}`, req.ip);
+        
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error('Create missing person error:', err);
@@ -330,6 +362,9 @@ app.put('/api/missing-persons/:id/mark-found', authenticateToken, async (req, re
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Case not found' });
         }
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'MARK_FOUND', 'missing_person', id, `Resolved: ${resolution_notes || 'No notes'}`, req.ip);
         
         res.json({ message: 'Case marked as found', case: result.rows[0] });
     } catch (err) {
@@ -406,6 +441,10 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
         }
 
         await pool.query('DELETE FROM missing_persons WHERE id = $1', [id]);
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'DELETE_POST', 'missing_person', id, `Reason: ${reason || 'No reason'}`, req.ip);
+        
         res.json({ message: 'Post deleted successfully', reason });
     } catch (err) {
         console.error('Delete missing person error:', err);
@@ -453,6 +492,10 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
             [newSightingId, req.user.id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station]
         );
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'CREATE_SIGHTING', 'sighting', newSightingId, `Sighting: ${missing_person_name}`, req.ip);
+        
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error('Create sighting error:', err);
@@ -482,7 +525,6 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// NEW: Route to mark a sighting as resolved
 app.put('/api/sightings/:id/resolve', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -491,6 +533,10 @@ app.put('/api/sightings/:id/resolve', authenticateToken, async (req, res) => {
             [id]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'RESOLVE_SIGHTING', 'sighting', id, 'Sighting marked as resolved', req.ip);
+        
         res.json({ message: 'Sighting resolved', case: result.rows[0] });
     } catch (err) {
         console.error('Resolve sighting error:', err);
@@ -498,7 +544,6 @@ app.put('/api/sightings/:id/resolve', authenticateToken, async (req, res) => {
     }
 });
 
-// NEW: Get resolved sightings for the dashboard
 app.get('/api/sightings/resolved', authenticateToken, async (req, res) => {
     try {
         const userStationId = req.user.station_id;
@@ -655,6 +700,9 @@ app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async
             [newUserId, email, hashedPassword, 'police', station_id, true]
         );
 
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'CREATE_POLICE_USER', 'user', newUserId, `Created police user: ${email} for station ${station_id}`, req.ip);
+
         res.status(201).json({
             message: 'Police user created successfully',
             user: newUser.rows[0]
@@ -681,6 +729,9 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
         await pool.query('DELETE FROM missing_persons WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM sightings WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'DELETE_USER', 'user', userId, `Deleted user: ${user.rows[0].email}`, req.ip);
         
         res.json({ message: 'User and their associated data deleted successfully' });
     } catch (err) {
@@ -761,7 +812,6 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
             [exactStationName]
         );
 
-        // UPDATED: Only fetch PENDING sightings
         const sightingsResult = await pool.query(
             `SELECT s.*, u.email as poster_email 
              FROM sightings s 
@@ -986,6 +1036,26 @@ app.get('/api/reports/weekly-activity', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('Weekly report error:', err);
         res.status(500).json({ error: 'Failed to generate weekly report' });
+    }
+});
+
+// ==========================================
+// 10.5. AUDIT LOGS ROUTE (ADDED)
+// ==========================================
+
+app.get('/api/admin/audit-logs', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT al.*, u.email as user_email 
+            FROM audit_logs al 
+            LEFT JOIN users u ON al.user_id = u.id 
+            ORDER BY al.created_at DESC 
+            LIMIT 100
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch audit logs error:', err);
+        res.status(500).json({ error: 'Failed to fetch audit logs' });
     }
 });
 
