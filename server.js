@@ -83,7 +83,7 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 2.5. AUDIT LOGGING HELPER (ADDED)
+// 2.5. AUDIT LOGGING HELPER
 // ==========================================
 async function logAudit(userId, action, targetType, targetId, details, ipAddress) {
     try {
@@ -138,14 +138,12 @@ app.post('/api/auth/login', async (req, res) => {
         const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         
         if (user.rows.length === 0) {
-            // --- AUDIT LOG ADDED ---
             await logAudit(null, 'LOGIN_FAILED', 'user', null, `Failed login attempt for ${email}`, req.ip);
             return res.status(400).json({ error: 'Invalid email or password' });
         }
         
         const validPassword = await bcrypt.compare(password, user.rows[0].password);
         if (!validPassword) {
-            // --- AUDIT LOG ADDED ---
             await logAudit(user.rows[0].id, 'LOGIN_FAILED', 'user', user.rows[0].id, 'Invalid password', req.ip);
             return res.status(400).json({ error: 'Invalid email or password' });
         }
@@ -163,7 +161,6 @@ app.post('/api/auth/login', async (req, res) => {
             { expiresIn: '30d' }
         );
 
-        // --- AUDIT LOG ADDED ---
         await logAudit(user.rows[0].id, 'LOGIN', 'user', user.rows[0].id, `Logged in as ${user.rows[0].role}`, req.ip);
 
         res.json({ 
@@ -312,7 +309,6 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
             [newPostId, req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls)]
         );
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'CREATE_POST', 'missing_person', newPostId, `Created post: ${name}`, req.ip);
         
         res.status(201).json(result.rows[0]);
@@ -341,6 +337,10 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
              WHERE id=$10 RETURNING *`,
             [name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, id]
         );
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'UPDATE_POST', 'missing_person', id, `Updated post: ${name}`, req.ip);
+        
         res.json(result.rows[0]);
     } catch (err) {
         console.error('Update missing person error:', err);
@@ -363,7 +363,6 @@ app.put('/api/missing-persons/:id/mark-found', authenticateToken, async (req, re
             return res.status(404).json({ error: 'Case not found' });
         }
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'MARK_FOUND', 'missing_person', id, `Resolved: ${resolution_notes || 'No notes'}`, req.ip);
         
         res.json({ message: 'Case marked as found', case: result.rows[0] });
@@ -442,7 +441,6 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
 
         await pool.query('DELETE FROM missing_persons WHERE id = $1', [id]);
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'DELETE_POST', 'missing_person', id, `Reason: ${reason || 'No reason'}`, req.ip);
         
         res.json({ message: 'Post deleted successfully', reason });
@@ -493,7 +491,6 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
             [newSightingId, req.user.id, missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, photo_url, police_station]
         );
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'CREATE_SIGHTING', 'sighting', newSightingId, `Sighting: ${missing_person_name}`, req.ip);
         
         res.status(201).json(result.rows[0]);
@@ -518,6 +515,10 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
             `UPDATE sightings SET missing_person_name=$1, gender=$2, sighting_location=$3, sighting_time=$4, description=$5, reporter_name=$6, reporter_contact=$7, police_station=$8 WHERE id=$9 RETURNING *`,
             [missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, police_station, id]
         );
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'UPDATE_SIGHTING', 'sighting', id, `Updated sighting: ${missing_person_name}`, req.ip);
+        
         res.json(result.rows[0]);
     } catch (err) {
         console.error('Update sighting error:', err);
@@ -534,7 +535,6 @@ app.put('/api/sightings/:id/resolve', authenticateToken, async (req, res) => {
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'RESOLVE_SIGHTING', 'sighting', id, 'Sighting marked as resolved', req.ip);
         
         res.json({ message: 'Sighting resolved', case: result.rows[0] });
@@ -587,6 +587,10 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Not authorized' });
         }
         await pool.query('DELETE FROM sightings WHERE id = $1', [id]);
+        
+        // --- AUDIT LOG ADDED ---
+        await logAudit(req.user.id, 'DELETE_SIGHTING', 'sighting', id, 'Deleted sighting report', req.ip);
+        
         res.json({ message: 'Sighting deleted' });
     } catch (err) {
         console.error('Delete sighting error:', err);
@@ -700,7 +704,6 @@ app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async
             [newUserId, email, hashedPassword, 'police', station_id, true]
         );
 
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'CREATE_POLICE_USER', 'user', newUserId, `Created police user: ${email} for station ${station_id}`, req.ip);
 
         res.status(201).json({
@@ -730,7 +733,6 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
         await pool.query('DELETE FROM sightings WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM users WHERE id = $1', [userId]);
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'DELETE_USER', 'user', userId, `Deleted user: ${user.rows[0].email}`, req.ip);
         
         res.json({ message: 'User and their associated data deleted successfully' });
@@ -1040,7 +1042,7 @@ app.get('/api/reports/weekly-activity', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 10.5. AUDIT LOGS ROUTE (ADDED)
+// 10.5. AUDIT LOGS ROUTE
 // ==========================================
 
 app.get('/api/admin/audit-logs', authenticateToken, requireAdmin, async (req, res) => {
