@@ -234,6 +234,32 @@ app.get('/api/missing-persons', async (req, res) => {
     }
 });
 
+// ==========================================
+// NEW: BACKEND SEARCH ROUTE (ADDED HERE)
+// ==========================================
+app.get('/api/missing-persons/search', async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) return res.json([]);
+        
+        // ILIKE is case-insensitive search in PostgreSQL
+        const searchTerm = `%${q}%`;
+        
+        const result = await pool.query(
+            `SELECT * FROM missing_persons 
+             WHERE status = 'active' 
+             AND (name ILIKE $1 OR last_seen_location ILIKE $1 OR description ILIKE $1) 
+             ORDER BY date_missing DESC 
+             LIMIT 50`,
+            [searchTerm]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Search error:', err);
+        res.status(500).json({ error: 'Search failed' });
+    }
+});
+
 app.get('/api/missing-persons/station/:stationId', authenticateToken, async (req, res) => {
     try {
         const { stationId } = req.params;
