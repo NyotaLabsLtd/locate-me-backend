@@ -224,9 +224,17 @@ app.get('/api/auth/verify/:token', async (req, res) => {
 // 4. MISSING PERSONS ROUTES
 // ==========================================
 
+// CHANGE 2: Exclude poster_contact from public results
 app.get('/api/missing-persons', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM missing_persons WHERE status = \'active\' ORDER BY date_missing DESC');
+        const result = await pool.query(`
+            SELECT id, user_id, name, age, gender, description, notes, residence, 
+                   last_seen_location, date_last_seen, police_station, date_missing, 
+                   photo_urls, status, created_at, updated_at 
+            FROM missing_persons 
+            WHERE status = 'active' 
+            ORDER BY date_missing DESC
+        `);
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch missing persons error:', err);
@@ -324,15 +332,16 @@ app.get('/api/police-stations', async (req, res) => {
     }
 });
 
+// CHANGE 1: Accept and save poster_contact
 app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res) => {
     try {
-        const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls } = req.body;
+        const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, poster_contact } = req.body;
         const newPostId = uuidv4();
         
         const result = await pool.query(
-            `INSERT INTO missing_persons (id, user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, status) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active') RETURNING *`,
-            [newPostId, req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls)]
+            `INSERT INTO missing_persons (id, user_id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, status, poster_contact) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', $14) RETURNING *`,
+            [newPostId, req.user.id, name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, JSON.stringify(photo_urls), poster_contact]
         );
         
         await logAudit(req.user.id, 'CREATE_POST', 'missing_person', newPostId, `Created post: ${name}`, req.ip);
