@@ -8,6 +8,7 @@ const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
+const { Resend } = require('resend'); // <-- ADDED RESEND
 
 const app = express();
 
@@ -34,6 +35,9 @@ cloudinary.config({
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Initialize Resend with your API Key from Vercel
+const resend = new Resend(process.env.RESEND_API_KEY); // <-- ADDED RESEND INITIALIZATION
 
 // ==========================================
 // 2. SECURITY MIDDLEWARE
@@ -218,6 +222,55 @@ app.get('/api/auth/verify/:token', async (req, res) => {
     } catch (err) {
         res.status(400).json({ error: 'Invalid or expired verification link' });
     }
+});
+
+// ==========================================
+// NEW: SEND VERIFICATION EMAIL ROUTE
+// ==========================================
+app.post('/api/auth/send-verification-email', async (req, res) => {
+  try {
+    const { email, verificationLink } = req.body;
+    
+    const { data, error } = await resend.emails.send({
+      from: 'Locate Me <info@locate-me.co.ke>',
+      to: [email],
+      subject: 'Verify Your Email - Locate Me',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #fbbf24;">Welcome to Locate Me!</h2>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6;">
+            Thank you for signing up. Please verify your email by clicking the button below:
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${verificationLink}" 
+               style="display: inline-block; background: #fbbf24; color: #0f172a; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+              Verify Email
+            </a>
+          </div>
+          <p style="color: #64748b; font-size: 14px;">
+            Or copy and paste this link into your browser:<br>
+            <a href="${verificationLink}" style="color: #2563eb;">${verificationLink}</a>
+          </p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+          <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+            © 2024 Locate Me. All rights reserved.<br>
+            If you didn't create this account, you can safely ignore this email.
+          </p>
+        </div>
+      `
+    });
+    
+    if (error) {
+      console.error('Resend error:', error);
+      return res.status(500).json({ error: 'Failed to send email' });
+    }
+    
+    console.log('Verification email sent to:', email);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Email error:', error);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
 });
 
 // ==========================================
