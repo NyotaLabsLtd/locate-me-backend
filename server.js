@@ -8,7 +8,7 @@ const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
-const { Resend } = require('resend'); // <-- ADDED RESEND
+const { Resend } = require('resend');
 
 const app = express();
 
@@ -36,8 +36,8 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Initialize Resend with your API Key from Vercel
-const resend = new Resend(process.env.RESEND_API_KEY); // <-- ADDED RESEND INITIALIZATION
+// Initialize Resend with your API Key
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ==========================================
 // 2. SECURITY MIDDLEWARE
@@ -225,7 +225,7 @@ app.get('/api/auth/verify/:token', async (req, res) => {
 });
 
 // ==========================================
-// NEW: SEND VERIFICATION EMAIL ROUTE
+// SEND VERIFICATION EMAIL ROUTE
 // ==========================================
 app.post('/api/auth/send-verification-email', async (req, res) => {
   try {
@@ -270,6 +270,85 @@ app.post('/api/auth/send-verification-email', async (req, res) => {
   } catch (error) {
     console.error('Email error:', error);
     res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
+// ==========================================
+// FORGOT PASSWORD ROUTES
+// ==========================================
+
+// 1. Request Password Reset
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
+    
+    // Always return success to prevent email enumeration attacks
+    if (user.rows.length === 0) {
+      return res.json({ message: 'If an account exists, a reset link has been sent.' });
+    }
+
+    // Generate a short-lived token (15 minutes)
+    const resetToken = jwt.sign({ id: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    const resetLink = `https://locate-me.co.ke/?reset=${resetToken}`;
+
+    // Send email via Resend
+    const { data, error } = await resend.emails.send({
+      from: 'Locate Me <info@locate-me.co.ke>',
+      to: [email],
+      subject: 'Reset Your Password - Locate Me',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #fbbf24;">Reset Your Password</h2>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6;">
+            You requested a password reset for your Locate Me account. Click the button below to create a new password. This link expires in 15 minutes.
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetLink}" 
+               style="display: inline-block; background: #fbbf24; color: #0f172a; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+              Reset Password
+            </a>
+          </div>
+          <p style="color: #64748b; font-size: 14px;">
+            If you didn't request this, you can safely ignore this email.
+          </p>
+        </div>
+      `
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      return res.status(500).json({ error: 'Failed to send reset email' });
+    }
+
+    res.json({ message: 'If an account exists, a reset link has been sent.' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// 2. Process Password Reset
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    
+    // Verify the token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    // Update the database
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
+    
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(400).json({ error: 'Reset link has expired. Please request a new one.' });
+    }
+    console.error('Reset password error:', err);
+    res.status(400).json({ error: 'Invalid or expired reset link' });
   }
 });
 
