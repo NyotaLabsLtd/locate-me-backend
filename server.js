@@ -418,6 +418,7 @@ app.get('/api/police-stations', async (req, res) => {
     try {
         const stations = [
             { id: 'RUI-2026-001', name: 'Ruiru Police Station', county: 'Kiambu' },
+            { id: 'GAT-2026-001', name: 'Gatundu Police Station', county: 'Kiambu' }, // <-- ADDED GATUNDU
             { id: 'KAS-2026-001', name: 'Kasarani Police Station', county: 'Nairobi' },
             { id: 'NRB-2026-001', name: 'Central Police Station - Nairobi', county: 'Nairobi' },
             { id: 'KIL-2026-001', name: 'Kilimani Police Station', county: 'Nairobi' },
@@ -549,6 +550,7 @@ app.get('/api/missing-persons/resolved', authenticateToken, async (req, res) => 
 
         const stationMap = {
             'RUI-2026-001': 'Ruiru Police Station',
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
             'KAS-2026-001': 'Kasarani Police Station',
             'NRB-2026-001': 'Central Police Station',
             'KIL-2026-001': 'Kilimani Police Station',
@@ -720,6 +722,7 @@ app.get('/api/sightings/resolved', authenticateToken, async (req, res) => {
 
         const stationMap = {
             'RUI-2026-001': 'Ruiru Police Station',
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
             'KAS-2026-001': 'Kasarani Police Station',
             'NRB-2026-001': 'Central Police Station',
             'KIL-2026-001': 'Kilimani Police Station',
@@ -954,6 +957,7 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
 
         const stationMap = {
             'RUI-2026-001': 'Ruiru Police Station',
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
             'KAS-2026-001': 'Kasarani Police Station',
             'NRB-2026-001': 'Central Police Station',
             'KIL-2026-001': 'Kilimani Police Station',
@@ -1029,10 +1033,15 @@ app.get('/api/reports/monthly-missing', authenticateToken, async (req, res) => {
         }
 
         const stationMap = {
-            'RUI-2026-001': 'Ruiru Police Station', 'KAS-2026-001': 'Kasarani Police Station',
-            'NRB-2026-001': 'Central Police Station', 'KIL-2026-001': 'Kilimani Police Station',
-            'WES-2026-001': 'Westlands Police Station', 'LAN-2026-001': "Lang'ata Police Station",
-            'EMB-2026-001': 'Embakasi Police Station', 'PAR-2026-001': 'Parklands police station',
+            'RUI-2026-001': 'Ruiru Police Station', 
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
+            'KAS-2026-001': 'Kasarani Police Station',
+            'NRB-2026-001': 'Central Police Station', 
+            'KIL-2026-001': 'Kilimani Police Station',
+            'WES-2026-001': 'Westlands Police Station', 
+            'LAN-2026-001': "Lang'ata Police Station",
+            'EMB-2026-001': 'Embakasi Police Station', 
+            'PAR-2026-001': 'Parklands police station',
             'KAR-2026-001': 'Karen Police Station.'
         };
 
@@ -1067,7 +1076,18 @@ app.get('/api/reports/sighting-analysis', authenticateToken, async (req, res) =>
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 'RUI-2026-001': 'Ruiru Police Station', 'KAS-2026-001': 'Kasarani Police Station', 'NRB-2026-001': 'Central Police Station', 'KIL-2026-001': 'Kilimani Police Station', 'WES-2026-001': 'Westlands Police Station', 'LAN-2026-001': "Lang'ata Police Station", 'EMB-2026-001': 'Embakasi Police Station', 'PAR-2026-001': 'Parklands police station', 'KAR-2026-001': 'Karen Police Station.' };
+        const stationMap = { 
+            'RUI-2026-001': 'Ruiru Police Station', 
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
+            'KAS-2026-001': 'Kasarani Police Station', 
+            'NRB-2026-001': 'Central Police Station', 
+            'KIL-2026-001': 'Kilimani Police Station', 
+            'WES-2026-001': 'Westlands Police Station', 
+            'LAN-2026-001': "Lang'ata Police Station", 
+            'EMB-2026-001': 'Embakasi Police Station', 
+            'PAR-2026-001': 'Parklands police station', 
+            'KAR-2026-001': 'Karen Police Station.' 
+        };
         const exactStationName = stationMap[userStationId];
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
@@ -1093,7 +1113,18 @@ app.get('/api/reports/resolved-summary', authenticateToken, async (req, res) => 
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 'RUI-2026-001': 'Ruiru Police Station', 'KAS-2026-001': 'Kasarani Police Station', 'NRB-2026-001': 'Central Police Station', 'KIL-2026-001': 'Kilimani Police Station', 'WES-2026-001': 'Westlands Police Station', 'LAN-2026-001': "Lang'ata Police Station", 'EMB-2026-001': 'Embakasi Police Station', 'PAR-2026-001': 'Parklands police station', 'KAR-2026-001': 'Karen Police Station.' };
+        const stationMap = { 
+            'RUI-2026-001': 'Ruiru Police Station', 
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
+            'KAS-2026-001': 'Kasarani Police Station', 
+            'NRB-2026-001': 'Central Police Station', 
+            'KIL-2026-001': 'Kilimani Police Station', 
+            'WES-2026-001': 'Westlands Police Station', 
+            'LAN-2026-001': "Lang'ata Police Station", 
+            'EMB-2026-001': 'Embakasi Police Station', 
+            'PAR-2026-001': 'Parklands police station', 
+            'KAR-2026-001': 'Karen Police Station.' 
+        };
         const exactStationName = stationMap[userStationId];
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
@@ -1122,7 +1153,18 @@ app.get('/api/reports/critical-cases', authenticateToken, async (req, res) => {
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 'RUI-2026-001': 'Ruiru Police Station', 'KAS-2026-001': 'Kasarani Police Station', 'NRB-2026-001': 'Central Police Station', 'KIL-2026-001': 'Kilimani Police Station', 'WES-2026-001': 'Westlands Police Station', 'LAN-2026-001': "Lang'ata Police Station", 'EMB-2026-001': 'Embakasi Police Station', 'PAR-2026-001': 'Parklands police station', 'KAR-2026-001': 'Karen Police Station.' };
+        const stationMap = { 
+            'RUI-2026-001': 'Ruiru Police Station', 
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
+            'KAS-2026-001': 'Kasarani Police Station', 
+            'NRB-2026-001': 'Central Police Station', 
+            'KIL-2026-001': 'Kilimani Police Station', 
+            'WES-2026-001': 'Westlands Police Station', 
+            'LAN-2026-001': "Lang'ata Police Station", 
+            'EMB-2026-001': 'Embakasi Police Station', 
+            'PAR-2026-001': 'Parklands police station', 
+            'KAR-2026-001': 'Karen Police Station.' 
+        };
         const exactStationName = stationMap[userStationId];
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
@@ -1152,7 +1194,18 @@ app.get('/api/reports/station-performance', authenticateToken, async (req, res) 
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 'RUI-2026-001': 'Ruiru Police Station', 'KAS-2026-001': 'Kasarani Police Station', 'NRB-2026-001': 'Central Police Station', 'KIL-2026-001': 'Kilimani Police Station', 'WES-2026-001': 'Westlands Police Station', 'LAN-2026-001': "Lang'ata Police Station", 'EMB-2026-001': 'Embakasi Police Station', 'PAR-2026-001': 'Parklands police station', 'KAR-2026-001': 'Karen Police Station.' };
+        const stationMap = { 
+            'RUI-2026-001': 'Ruiru Police Station', 
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
+            'KAS-2026-001': 'Kasarani Police Station', 
+            'NRB-2026-001': 'Central Police Station', 
+            'KIL-2026-001': 'Kilimani Police Station', 
+            'WES-2026-001': 'Westlands Police Station', 
+            'LAN-2026-001': "Lang'ata Police Station", 
+            'EMB-2026-001': 'Embakasi Police Station', 
+            'PAR-2026-001': 'Parklands police station', 
+            'KAR-2026-001': 'Karen Police Station.' 
+        };
         const exactStationName = stationMap[userStationId];
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
@@ -1181,7 +1234,18 @@ app.get('/api/reports/weekly-activity', authenticateToken, async (req, res) => {
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 'RUI-2026-001': 'Ruiru Police Station', 'KAS-2026-001': 'Kasarani Police Station', 'NRB-2026-001': 'Central Police Station', 'KIL-2026-001': 'Kilimani Police Station', 'WES-2026-001': 'Westlands Police Station', 'LAN-2026-001': "Lang'ata Police Station", 'EMB-2026-001': 'Embakasi Police Station', 'PAR-2026-001': 'Parklands police station', 'KAR-2026-001': 'Karen Police Station.' };
+        const stationMap = { 
+            'RUI-2026-001': 'Ruiru Police Station', 
+            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
+            'KAS-2026-001': 'Kasarani Police Station', 
+            'NRB-2026-001': 'Central Police Station', 
+            'KIL-2026-001': 'Kilimani Police Station', 
+            'WES-2026-001': 'Westlands Police Station', 
+            'LAN-2026-001': "Lang'ata Police Station", 
+            'EMB-2026-001': 'Embakasi Police Station', 
+            'PAR-2026-001': 'Parklands police station', 
+            'KAR-2026-001': 'Karen Police Station.' 
+        };
         const exactStationName = stationMap[userStationId];
         
         const weekAgo = new Date();
