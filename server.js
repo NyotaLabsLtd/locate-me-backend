@@ -589,22 +589,97 @@ app.get('/api/missing-persons/resolved-public', async (req, res) => {
     }
 });
 
+// ==========================================
+// UPDATED: SOFT DELETE FOR POLICE REVIEW
+// ==========================================
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
+        
         const post = await pool.query('SELECT * FROM missing_persons WHERE id = $1', [id]);
         if (post.rows.length === 0) return res.status(404).json({ error: 'Post not found' });
         if (post.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Not authorized to delete this post' });
+            return res.status(403).json({ error: 'Not authorized to request deletion for this post' });
         }
 
-        await pool.query('DELETE FROM missing_persons WHERE id = $1', [id]);
-        await logAudit(req.user.id, 'DELETE_POST', 'missing_person', id, `Reason: ${reason || 'No reason'}`, req.ip);
-        res.json({ message: 'Post deleted successfully', reason });
+        // Update status instead of permanently deleting
+        await pool.query(
+            `UPDATE missing_persons SET status = 'deleted_pending_review', resolution_notes = $1 WHERE id = $2`,
+            [reason || 'User requested deletion', id]
+        );
+        
+        await logAudit(req.user.id, 'REQUEST_DELETE', 'missing_person', id, `Reason: ${reason || 'No reason'}`, req.ip);
+        
+        res.json({ message: 'Deletion request sent to police for review.' });
     } catch (err) {
-        console.error('Delete missing person error:', err);
-        res.status(500).json({ error: 'Failed to delete post' });
+        console.error('Request delete error:', err);
+        res.status(500).json({ error: 'Failed to request deletion' });
+    }
+});
+
+// NEW: Fetch posts pending deletion review for a specific police station
+app.get('/api/police/deleted-posts', authenticateToken, async (req, res) => {
+    try {
+        const userStationId = req.user.station_id;
+        if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
+            return res.status(403).json({ error: 'User is not assigned to a police station.' });
+        }
+        const exactStationName = getStationName(userStationId);
+        
+        const result = await pool.query(
+            `SELECT mp.*, u.email as poster_email FROM missing_persons mp 
+             LEFT JOIN users u ON mp.user_id = u.id 
+             WHERE mp.police_station = $1 AND mp.status = 'deleted_pending_review'
+             ORDER BY mp.date_missing DESC`,
+            [exactStationName]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Fetch deleted posts error:', err);
+        res.status(500).json({ error: 'Failed to fetch deleted posts' });
+    }
+});
+
+// NEW: Police officer makes a final decision on the deleted post
+app.put('/api/police/review-deletion/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { action, officer_notes } = req.body; // action: 'resolve' or 'permanent_delete'
+        
+        const userStationId = req.user.station_id;
+        if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
+            return res.status(403).json({ error: 'User is not assigned to a police station.' });
+        }
+        const exactStationName = getStationName(userStationId);
+
+        const post = await pool.query('SELECT * FROM missing_persons WHERE id = $1', [id]);
+        if (post.rows.length === 0) return res.status(404).json({ error: 'Post not found' });
+        if (post.rows[0].police_station !== exactStationName) {
+            return res.status(403).json({ error: 'Not authorized to review this post' });
+        }
+
+        if (action === 'resolve') {
+            // Officer confirms the person was found
+            await pool.query(
+                `UPDATE missing_persons SET status = 'resolved', resolved_at = NOW(), resolution_notes = $1 WHERE id = $2`,
+                [officer_notes || 'Verified by police: Case resolved based on user request.', id]
+            );
+            await logAudit(req.user.id, 'APPROVE_RESOLVE', 'missing_person', id, `Officer notes: ${officer_notes}`, req.ip);
+            res.json({ message: 'Case officially marked as resolved.' });
+            
+        } else if (action === 'permanent_delete') {
+            // Officer confirms it was a duplicate/fake and scrubs it
+            await pool.query('DELETE FROM missing_persons WHERE id = $1', [id]);
+            await logAudit(req.user.id, 'PERMANENT_DELETE', 'missing_person', id, `Approved permanent deletion`, req.ip);
+            res.json({ message: 'Post permanently deleted from database.' });
+            
+        } else {
+            return res.status(400).json({ error: 'Invalid action' });
+        }
+    } catch (err) {
+        console.error('Review deletion error:', err);
+        res.status(500).json({ error: 'Failed to process review' });
     }
 });
 
