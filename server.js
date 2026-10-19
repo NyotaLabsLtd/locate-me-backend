@@ -40,6 +40,78 @@ const upload = multer({ storage: multer.memoryStorage() });
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ==========================================
+// UNIFIED POLICE STATION MAP
+// ==========================================
+const STATION_ID_TO_NAME = {
+    'NBI-CEN': 'Central Police Station', 'NBI-KIL': 'Kilimani Police Station', 'NBI-WES': 'Westlands Police Station',
+    'NBI-KAS': 'Kasarani Police Station', 'NBI-LAN': "Lang'ata Police Station", 'NBI-EMB': 'Embakasi Police Station',
+    'NBI-RUA': 'Ruaraka Police Station', 'NBI-DON': 'Donholm Police Station', 'NBI-KAY': 'Kayole Police Station',
+    'NBI-PUM': 'Pumwani Police Station', 'NBI-KAM': 'Kamukunji Police Station', 'NBI-STA': 'Starehe Police Station',
+    'NBI-MAK': 'Makadara Police Station', 'NBI-KIB': 'Kibera Police Station', 'NBI-PAR': 'Parklands Police Station',
+    'NBI-KAR': 'Karen Police Station', 'NBI-DAG': 'Dagoretti Police Station', 'NBI-MAT': 'Mathare Police Station',
+    'NBI-KAR2': 'Kariobangi Police Station',
+    
+    'KIA-RUI': 'Ruiru Police Station', 'KIA-GAT': 'Gatundu Police Station', 'KIA-THI': 'Thika Police Station',
+    'KIA-KIA': 'Kiambu Town Police Station', 'KIA-LIM': 'Limuru Police Station', 'KIA-JUJ': 'Juja Police Station',
+    'KIA-KAR': 'Karuri Police Station', 'KIA-KIK': 'Kikuyu Police Station', 'KIA-KIJ': 'Kijabe Police Station',
+    'KIA-LAR': 'Lari Police Station', 'MUR-MUR': "Murang'a Town Police Station", 'MUR-KAN': 'Kangema Police Station',
+    'MUR-KIH': 'Kiharu Police Station', 'NYE-NYE': 'Nyeri Central Police Station', 'NYE-OTH': 'Othaya Police Station',
+    'NYE-KAR': 'Karatina Police Station', 'NYE-MUK': 'Mukurweini Police Station', 'KIR-KER': 'Kerugoya Police Station',
+    'KIR-KUT': 'Kutus Police Station', 'KIR-SAG': 'Sagana Police Station', 'NYA-OLK': 'Ol Kalou Police Station',
+    'NYA-NJA': 'Njabini Police Station', 'NYA-KIN': 'Kinangop Police Station',
+    
+    'MAC-MAC': 'Machakos Town Police Station', 'MAC-MAV': 'Mavoko Police Station (Athi River)', 'MAC-KAN': 'Kangundo Police Station',
+    'MAC-MAT': 'Matuu Police Station', 'KIT-KIT': 'Kitui Town Police Station', 'KIT-MWI': 'Mwingi Police Station',
+    'MAK-WOT': 'Wote Police Station (Makueni)', 'MAK-MAK': 'Makindu Police Station', 'MAK-MTI': 'Mtito Andei Police Station',
+    'EMB-EMB': 'Embu Town Police Station', 'EMB-RUN': 'Runyenjes Police Station', 'EMB-SIA': 'Siakago Police Station',
+    'MER-MER': 'Meru Central Police Station', 'MER-MAU': 'Maua Police Station', 'MER-NKU': 'Nkubu Police Station',
+    'MER-CHU': 'Chuka Police Station', 'MER-TIM': 'Timau Police Station', 'MAR-MAR': 'Marsabit Town Police Station',
+    'MAR-MOY': 'Moyale Police Station', 'MAR-NOR': 'North Horr Police Station', 'GAR-GAR': 'Garissa Town Police Station',
+    'GAR-DAD': 'Dadaab Police Station', 'GAR-BAL': 'Balambala Police Station', 'WAJ-WAJ': 'Wajir Town Police Station',
+    'WAJ-ELD': 'Eldas Police Station', 'MAN-MAN': 'Mandera Town Police Station', 'MAN-ELW': 'El Wak Police Station',
+    'ISI-ISI': 'Isiolo Town Police Station', 'ISI-GAR': 'Garbatulla Police Station',
+    
+    'MOM-CEN': 'Mombasa Central Police Station', 'MOM-TUD': 'Tudor Police Station', 'MOM-CHA': 'Changamwe Police Station',
+    'MOM-KIS': 'Kisauni Police Station', 'MOM-LIK': 'Likoni Police Station', 'MOM-NYA': 'Nyali Police Station',
+    'MOM-BAM': 'Bamburi Police Station', 'KIL-KIL': 'Kilifi Town Police Station', 'KIL-MAL': 'Malindi Police Station',
+    'KIL-MTW': 'Mtwapa Police Station', 'KIL-VIP': 'Vipingo Police Station', 'KWA-KWA': 'Kwale Town Police Station',
+    'KWA-MSA': 'Msambweni Police Station', 'KWA-KIN': 'Kinango Police Station', 'TAN-HOL': 'Hola Police Station (Tana River)',
+    'TAN-GAR': 'Garsen Police Station', 'LAM-LAM': 'Lamu Town Police Station', 'LAM-MPE': 'Mpeketoni Police Station',
+    
+    'NAK-CEN': 'Nakuru Central Police Station', 'NAK-NAI': 'Naivasha Police Station', 'NAK-GIL': 'Gilgil Police Station',
+    'NAK-MOL': 'Molo Police Station', 'NAK-NJO': 'Njoro Police Station', 'NAK-RON': 'Rongai Police Station (Nakuru)',
+    'UAS-ELD': 'Eldoret Central Police Station', 'UAS-ELT': 'Eldoret Town Police Station', 'UAS-TUR': 'Turbo Police Station',
+    'UAS-MOI': "Moi's Bridge Police Station", 'UAS-BUR': 'Burnt Forest Police Station', 'NAN-KAP': 'Kapsabet Police Station',
+    'NAN-HIL': 'Nandi Hills Police Station', 'NAN-MOS': 'Mosoriot Police Station', 'KER-KER': 'Kericho Town Police Station',
+    'KER-LIT': 'Litein Police Station', 'KER-KIP': 'Kipkelion Police Station', 'KER-LON': 'Londiani Police Station',
+    'BOM-BOM': 'Bomet Town Police Station', 'BOM-SOT': 'Sotik Police Station', 'BOM-LON': 'Longisa Police Station',
+    'NAR-NAR': 'Narok Town Police Station', 'NAR-KIL': 'Kilgoris Police Station', 'NAR-SUS': 'Suswa Police Station',
+    'NAK-MAI': 'Mai Mahiu Police Station', 'KAJ-RON': 'Ongata Rongai Police Station (Kajiado)', 'KAJ-KIT': 'Kitengela Police Station',
+    'KAJ-KAJ': 'Kajiado Town Police Station', 'KAJ-NGO': 'Ngong Police Station', 'KAJ-ISI': 'Isinya Police Station',
+    'KAJ-NAM': 'Namanga Police Station', 'BAR-KAB': 'Kabarnet Police Station', 'BAR-ELD': 'Eldama Ravine Police Station',
+    'BAR-MAR': 'Marigat Police Station', 'LAI-NAN': 'Nanyuki Police Station', 'LAI-RUM': 'Rumuruti Police Station',
+    'LAI-DOL': 'Dol Dol Police Station', 'SAM-MAR': 'Maralal Police Station', 'TUR-LOD': 'Lodwar Police Station',
+    'TUR-KAK': 'Kakuma Police Station', 'WES-KAP': 'Kapenguria Police Station', 'TRA-KIT': 'Kitale Police Station',
+    'TRA-KIM': 'Kiminini Police Station', 'TRA-END': 'Endebess Police Station',
+    
+    'KAK-KAK': 'Kakamega Central Police Station', 'KAK-MUM': 'Mumias Police Station', 'KAK-BUT': 'Butere Police Station',
+    'KAK-MAL': 'Malava Police Station', 'KAK-LUG': 'Lugari Police Station', 'BUN-BUN': 'Bungoma Town Police Station',
+    'BUN-WEB': 'Webuye Police Station', 'BUN-KIM': 'Kimilili Police Station', 'BUN-CHW': 'Chwele Police Station',
+    'BUS-BUS': 'Busia Town Police Station', 'BUS-MAL': 'Malaba Police Station', 'BUS-NAM': 'Nambale Police Station',
+    'VIH-MBA': 'Mbale Police Station', 'VIH-LUA': 'Luanda Police Station', 'VIH-HAM': 'Hamisi Police Station',
+    
+    'KIS-CEN': 'Kisumu Central Police Station', 'KIS-TOW': 'Kisumu Town Police Station', 'KIS-MAS': 'Maseno Police Station',
+    'KIS-MUH': 'Muhoroni Police Station', 'KIS-AHE': 'Ahero Police Station', 'SIA-SIA': 'Siaya Town Police Station',
+    'SIA-BON': 'Bondo Police Station', 'SIA-UGU': 'Ugunja Police Station', 'HOM-HOM': 'Homa Bay Town Police Station',
+    'HOM-MBI': 'Mbita Police Station', 'HOM-KEN': 'Kendu Bay Police Station', 'MIG-MIG': 'Migori Town Police Station',
+    'MIG-RON': 'Rongo Police Station', 'MIG-AWE': 'Awendo Police Station', 'KIS2-KIS': 'Kisii Town Police Station',
+    'KIS2-KER': 'Keroka Police Station', 'KIS2-SUN': 'Suneka Police Station', 'NYA-NYA': 'Nyamira Town Police Station'
+};
+
+// Helper function to get station name from ID
+const getStationName = (id) => STATION_ID_TO_NAME[id] || id;
+
+// ==========================================
 // 2. SECURITY MIDDLEWARE
 // ==========================================
 
@@ -99,7 +171,6 @@ async function logAudit(userId, action, targetType, targetId, details, ipAddress
         console.log(`[AUDIT] ${action} by User ${userId}`);
     } catch (err) {
         console.error('Audit log error:', err);
-        // We don't throw here so the main action doesn't fail if logging fails
     }
 }
 
@@ -277,22 +348,18 @@ app.post('/api/auth/send-verification-email', async (req, res) => {
 // FORGOT PASSWORD ROUTES
 // ==========================================
 
-// 1. Request Password Reset
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     const user = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
     
-    // Always return success to prevent email enumeration attacks
     if (user.rows.length === 0) {
       return res.json({ message: 'If an account exists, a reset link has been sent.' });
     }
 
-    // Generate a short-lived token (15 minutes)
     const resetToken = jwt.sign({ id: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: '15m' });
     const resetLink = `https://locate-me.co.ke/?reset=${resetToken}`;
 
-    // Send email via Resend
     const { data, error } = await resend.emails.send({
       from: 'Locate Me <info@locate-me.co.ke>',
       to: [email],
@@ -328,20 +395,12 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   }
 });
 
-// 2. Process Password Reset
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    
-    // Verify the token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    
-    // Update the database
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, decoded.id]);
-    
     res.json({ message: 'Password updated successfully' });
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -356,7 +415,6 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // 4. MISSING PERSONS ROUTES
 // ==========================================
 
-// CHANGE 2: Exclude poster_contact from public results
 app.get('/api/missing-persons', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -374,17 +432,11 @@ app.get('/api/missing-persons', async (req, res) => {
     }
 });
 
-// ==========================================
-// NEW: BACKEND SEARCH ROUTE (ADDED HERE)
-// ==========================================
 app.get('/api/missing-persons/search', async (req, res) => {
     try {
         const { q } = req.query;
         if (!q) return res.json([]);
-        
-        // ILIKE is case-insensitive search in PostgreSQL
         const searchTerm = `%${q}%`;
-        
         const result = await pool.query(
             `SELECT * FROM missing_persons 
              WHERE status = 'active' 
@@ -414,50 +466,21 @@ app.get('/api/missing-persons/station/:stationId', authenticateToken, async (req
     }
 });
 
+// DYNAMIC POLICE STATIONS ENDPOINT
 app.get('/api/police-stations', async (req, res) => {
     try {
-        const stations = [
-            { id: 'RUI-2026-001', name: 'Ruiru Police Station', county: 'Kiambu' },
-            { id: 'GAT-2026-001', name: 'Gatundu Police Station', county: 'Kiambu' }, // <-- ADDED GATUNDU
-            { id: 'KAS-2026-001', name: 'Kasarani Police Station', county: 'Nairobi' },
-            { id: 'NRB-2026-001', name: 'Central Police Station - Nairobi', county: 'Nairobi' },
-            { id: 'KIL-2026-001', name: 'Kilimani Police Station', county: 'Nairobi' },
-            { id: 'WES-2026-001', name: 'Westlands Police Station', county: 'Nairobi' },
-            { id: 'LAN-2026-001', name: "Lang'ata Police Station", county: 'Nairobi' },
-            { id: 'EMB-2026-001', name: 'Embakasi Police Station', county: 'Nairobi' },
-            { id: 'RUA-2026-001', name: 'Ruaraka Police Station', county: 'Nairobi' },
-            { id: 'DON-2026-001', name: 'Donholm Police Station', county: 'Nairobi' },
-            { id: 'KAY-2026-001', name: 'Kayole Police Station', county: 'Nairobi' },
-            { id: 'PUM-2026-001', name: 'Pumwani Police Station', county: 'Nairobi' },
-            { id: 'KAM-2026-001', name: 'Kamukunji Police Station', county: 'Nairobi' },
-            { id: 'STA-2026-001', name: 'Starehe Police Station', county: 'Nairobi' },
-            { id: 'MAK-2026-001', name: 'Makadara Police Station', county: 'Nairobi' },
-            { id: 'KIB-2026-001', name: 'Kibera Police Station', county: 'Nairobi' },
-            { id: 'PAR-2026-001', name: 'Parklands Police Station', county: 'Nairobi' },
-            { id: 'THI-2026-001', name: 'Thika Police Station', county: 'Kiambu' },
-            { id: 'KIA-2026-001', name: 'Kiambu Town Police Station', county: 'Kiambu' },
-            { id: 'LIM-2026-001', name: 'Limuru Police Station', county: 'Kiambu' },
-            { id: 'JUJ-2026-001', name: 'Juja Police Station', county: 'Kiambu' },
-            { id: 'KAR-2026-001', name: 'Karuri Police Station', county: 'Kiambu' },
-            { id: 'KIK-2026-001', name: 'Kikuyu Police Station', county: 'Kiambu' },
-            { id: 'MOM-2026-001', name: 'Mombasa Central Police Station', county: 'Mombasa' },
-            { id: 'TUD-2026-001', name: 'Tudor Police Station', county: 'Mombasa' },
-            { id: 'CHA-2026-001', name: 'Changamwe Police Station', county: 'Mombasa' },
-            { id: 'KIS-2026-001', name: 'Kisauni Police Station', county: 'Mombasa' },
-            { id: 'LIK-2026-001', name: 'Likoni Police Station', county: 'Mombasa' },
-            { id: 'KIS-CEN-001', name: 'Kisumu Central Police Station', county: 'Kisumu' },
-            { id: 'KIS-TOW-001', name: 'Kisumu Town Police Station', county: 'Kisumu' },
-            { id: 'NYA-2026-001', name: 'Nyando Police Station', county: 'Kisumu' },
-            { id: 'MUH-2026-001', name: 'Muhoroni Police Station', county: 'Kisumu' },
-            { id: 'NAK-CEN-001', name: 'Nakuru Central Police Station', county: 'Nakuru' },
-            { id: 'NAK-TOW-001', name: 'Nakuru Town Police Station', county: 'Nakuru' },
-            { id: 'NAI-2026-001', name: 'Naivasha Police Station', county: 'Nakuru' },
-            { id: 'GIL-2026-001', name: 'Gilgil Police Station', county: 'Nakuru' },
-            { id: 'MOL-2026-001', name: 'Molo Police Station', county: 'Nakuru' },
-            { id: 'ELD-2026-001', name: 'Eldoret Police Station', county: 'Uasin Gishu' },
-            { id: 'ELD-TOW-001', name: 'Eldoret Town Police Station', county: 'Uasin Gishu' },
-            { id: 'TUR-2026-001', name: 'Turbo Police Station', county: 'Uasin Gishu' }
-        ];
+        const stations = Object.entries(STATION_ID_TO_NAME).map(([id, name]) => {
+            let county = 'Other';
+            if (id.startsWith('NBI')) county = 'Nairobi';
+            else if (['KIA', 'MUR', 'NYE', 'KIR', 'NYA'].some(p => id.startsWith(p))) county = 'Central';
+            else if (['MAC', 'KIT', 'MAK', 'EMB', 'MER', 'MAR', 'GAR', 'WAJ', 'MAN', 'ISI'].some(p => id.startsWith(p))) county = 'Eastern & North Eastern';
+            else if (['MOM', 'KIL', 'KWA', 'TAN', 'LAM'].some(p => id.startsWith(p))) county = 'Coast';
+            else if (['NAK', 'UAS', 'NAN', 'KER', 'BOM', 'NAR', 'KAJ', 'BAR', 'LAI', 'SAM', 'TUR', 'WES', 'TRA'].some(p => id.startsWith(p))) county = 'Rift Valley';
+            else if (['KAK', 'BUN', 'BUS', 'VIH'].some(p => id.startsWith(p))) county = 'Western';
+            else if (['KIS', 'SIA', 'HOM', 'MIG', 'KIS2'].some(p => id.startsWith(p))) county = 'Nyanza';
+            
+            return { id, name, county };
+        });
         res.json(stations);
     } catch (err) {
         console.error('Fetch police stations error:', err);
@@ -465,7 +488,6 @@ app.get('/api/police-stations', async (req, res) => {
     }
 });
 
-// CHANGE 1: Accept and save poster_contact
 app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res) => {
     try {
         const { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, date_missing, photo_urls, poster_contact } = req.body;
@@ -478,7 +500,6 @@ app.post('/api/missing-persons', authenticateToken, postLimiter, async (req, res
         );
         
         await logAudit(req.user.id, 'CREATE_POST', 'missing_person', newPostId, `Created post: ${name}`, req.ip);
-        
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error('Create missing person error:', err);
@@ -490,7 +511,6 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         let { name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station } = req.body;
-        
         age = age ? parseInt(age) : null;
         if (date_last_seen === '') date_last_seen = null;
 
@@ -501,14 +521,11 @@ app.put('/api/missing-persons/:id', authenticateToken, async (req, res) => {
         }
 
         const result = await pool.query(
-            `UPDATE missing_persons SET name=$1, age=$2, gender=$3, description=$4, notes=$5, residence=$6, last_seen_location=$7, date_last_seen=$8, police_station=$9 
-             WHERE id=$10 RETURNING *`,
+            `UPDATE missing_persons SET name=$1, age=$2, gender=$3, description=$4, notes=$5, residence=$6, last_seen_location=$7, date_last_seen=$8, police_station=$9 WHERE id=$10 RETURNING *`,
             [name, age, gender, description, notes, residence, last_seen_location, date_last_seen, police_station, id]
         );
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'UPDATE_POST', 'missing_person', id, `Updated post: ${name}`, req.ip);
-        
         res.json(result.rows[0]);
     } catch (err) {
         console.error('Update missing person error:', err);
@@ -520,19 +537,13 @@ app.put('/api/missing-persons/:id/mark-found', authenticateToken, async (req, re
     try {
         const { id } = req.params;
         const { resolution_notes } = req.body;
-        
         const result = await pool.query(
-            `UPDATE missing_persons SET status = 'resolved', resolved_at = NOW(), resolution_notes = $1 
-             WHERE id = $2 RETURNING *`,
+            `UPDATE missing_persons SET status = 'resolved', resolved_at = NOW(), resolution_notes = $1 WHERE id = $2 RETURNING *`,
             [resolution_notes || 'Case resolved', id]
         );
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Case not found' });
-        }
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Case not found' });
         
         await logAudit(req.user.id, 'MARK_FOUND', 'missing_person', id, `Resolved: ${resolution_notes || 'No notes'}`, req.ip);
-        
         res.json({ message: 'Case marked as found', case: result.rows[0] });
     } catch (err) {
         console.error('Mark as found error:', err);
@@ -543,35 +554,17 @@ app.put('/api/missing-persons/:id/mark-found', authenticateToken, async (req, re
 app.get('/api/missing-persons/resolved', authenticateToken, async (req, res) => {
     try {
         const userStationId = req.user.station_id;
-        
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
             return res.status(403).json({ error: 'User is not assigned to a police station.' });
         }
 
-        const stationMap = {
-            'RUI-2026-001': 'Ruiru Police Station',
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station',
-            'NRB-2026-001': 'Central Police Station',
-            'KIL-2026-001': 'Kilimani Police Station',
-            'WES-2026-001': 'Westlands Police Station',
-            'LAN-2026-001': "Lang'ata Police Station",
-            'EMB-2026-001': 'Embakasi Police Station',
-            'PAR-2026-001': 'Parklands police station',
-            'KAR-2026-001': 'Karen Police Station.'
-        };
-
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
 
         const result = await pool.query(
-            `SELECT mp.*, u.email as poster_email 
-             FROM missing_persons mp 
-             LEFT JOIN users u ON mp.user_id = u.id 
-             WHERE mp.police_station = $1 AND mp.status = 'resolved'
-             ORDER BY mp.resolved_at DESC`,
+            `SELECT mp.*, u.email as poster_email FROM missing_persons mp LEFT JOIN users u ON mp.user_id = u.id 
+             WHERE mp.police_station = $1 AND mp.status = 'resolved' ORDER BY mp.resolved_at DESC`,
             [exactStationName]
         );
-        
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch resolved cases error:', err);
@@ -589,7 +582,6 @@ app.get('/api/missing-persons/resolved-public', async (req, res) => {
             WHERE status = 'resolved' 
             ORDER BY resolved_at DESC
         `);
-        
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch resolved public error:', err);
@@ -601,7 +593,6 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
-        
         const post = await pool.query('SELECT * FROM missing_persons WHERE id = $1', [id]);
         if (post.rows.length === 0) return res.status(404).json({ error: 'Post not found' });
         if (post.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
@@ -609,9 +600,7 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
         }
 
         await pool.query('DELETE FROM missing_persons WHERE id = $1', [id]);
-        
         await logAudit(req.user.id, 'DELETE_POST', 'missing_person', id, `Reason: ${reason || 'No reason'}`, req.ip);
-        
         res.json({ message: 'Post deleted successfully', reason });
     } catch (err) {
         console.error('Delete missing person error:', err);
@@ -641,7 +630,6 @@ app.get('/api/sightings/public', async (req, res) => {
             FROM sightings 
             ORDER BY created_at DESC
         `);
-        
         res.json(result.rows);
     } catch (err) {
         console.error('Fetch public sightings error:', err);
@@ -661,7 +649,6 @@ app.post('/api/sightings', authenticateToken, async (req, res) => {
         );
         
         await logAudit(req.user.id, 'CREATE_SIGHTING', 'sighting', newSightingId, `Sighting: ${missing_person_name}`, req.ip);
-        
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error('Create sighting error:', err);
@@ -673,7 +660,6 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, police_station } = req.body;
-        
         const sighting = await pool.query('SELECT * FROM sightings WHERE id = $1', [id]);
         if (sighting.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
         if (sighting.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
@@ -685,9 +671,7 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
             [missing_person_name, gender, sighting_location, sighting_time, description, reporter_name, reporter_contact, police_station, id]
         );
         
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'UPDATE_SIGHTING', 'sighting', id, `Updated sighting: ${missing_person_name}`, req.ip);
-        
         res.json(result.rows[0]);
     } catch (err) {
         console.error('Update sighting error:', err);
@@ -698,14 +682,10 @@ app.put('/api/sightings/:id', authenticateToken, async (req, res) => {
 app.put('/api/sightings/:id/resolve', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query(
-            "UPDATE sightings SET status = 'resolved', resolved_at = NOW() WHERE id = $1 RETURNING *", 
-            [id]
-        );
+        const result = await pool.query("UPDATE sightings SET status = 'resolved', resolved_at = NOW() WHERE id = $1 RETURNING *", [id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Sighting not found' });
         
         await logAudit(req.user.id, 'RESOLVE_SIGHTING', 'sighting', id, 'Sighting marked as resolved', req.ip);
-        
         res.json({ message: 'Sighting resolved', case: result.rows[0] });
     } catch (err) {
         console.error('Resolve sighting error:', err);
@@ -720,25 +700,10 @@ app.get('/api/sightings/resolved', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'User is not assigned to a police station.' });
         }
 
-        const stationMap = {
-            'RUI-2026-001': 'Ruiru Police Station',
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station',
-            'NRB-2026-001': 'Central Police Station',
-            'KIL-2026-001': 'Kilimani Police Station',
-            'WES-2026-001': 'Westlands Police Station',
-            'LAN-2026-001': "Lang'ata Police Station",
-            'EMB-2026-001': 'Embakasi Police Station',
-            'PAR-2026-001': 'Parklands police station',
-            'KAR-2026-001': 'Karen Police Station.'
-        };
-
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
 
         const result = await pool.query(
-            `SELECT * FROM sightings 
-             WHERE police_station = $1 AND status = 'resolved' 
-             ORDER BY resolved_at DESC`,
+            `SELECT * FROM sightings WHERE police_station = $1 AND status = 'resolved' ORDER BY resolved_at DESC`,
             [exactStationName]
         );
         res.json(result.rows);
@@ -757,10 +722,7 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Not authorized' });
         }
         await pool.query('DELETE FROM sightings WHERE id = $1', [id]);
-        
-        // --- AUDIT LOG ADDED ---
         await logAudit(req.user.id, 'DELETE_SIGHTING', 'sighting', id, 'Deleted sighting report', req.ip);
-        
         res.json({ message: 'Sighting deleted' });
     } catch (err) {
         console.error('Delete sighting error:', err);
@@ -774,13 +736,10 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
 
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
-        console.log('Fetching posts for user:', req.user.id);
-        
         const missingResult = await pool.query(
             'SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', 
             [req.user.id]
         );
-        
         const sightingsResult = await pool.query(
             'SELECT * FROM sightings WHERE user_id = $1 ORDER BY created_at DESC', 
             [req.user.id]
@@ -797,7 +756,6 @@ app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
             return dateB - dateA;
         });
         
-        console.log('Total posts returned:', combinedPosts.length);
         res.json(combinedPosts);
     } catch (err) {
         console.error('Fetch my posts error:', err);
@@ -856,15 +814,12 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { email, password, station_id } = req.body;
-        
         if (!email || !password || !station_id) {
             return res.status(400).json({ error: 'Email, password, and station ID are required' });
         }
 
         const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) {
-            return res.status(409).json({ error: 'Email already registered' });
-        }
+        if (existingUser.rows.length > 0) return res.status(409).json({ error: 'Email already registered' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const newUserId = uuidv4();
@@ -875,11 +830,7 @@ app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async
         );
 
         await logAudit(req.user.id, 'CREATE_POLICE_USER', 'user', newUserId, `Created police user: ${email} for station ${station_id}`, req.ip);
-
-        res.status(201).json({
-            message: 'Police user created successfully',
-            user: newUser.rows[0]
-        });
+        res.status(201).json({ message: 'Police user created successfully', user: newUser.rows[0] });
     } catch (err) {
         console.error('Create police user error:', err);
         res.status(500).json({ error: 'Failed to create user' });
@@ -889,22 +840,16 @@ app.post('/api/admin/create-police-user', authenticateToken, requireAdmin, async
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const userId = req.params.id;
-        
-        if (userId === req.user.id) {
-            return res.status(400).json({ error: 'You cannot delete your own account' });
-        }
+        if (userId === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
 
         const user = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-        if (user.rows.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
         await pool.query('DELETE FROM missing_persons WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM sightings WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM users WHERE id = $1', [userId]);
         
         await logAudit(req.user.id, 'DELETE_USER', 'user', userId, `Deleted user: ${user.rows[0].email}`, req.ip);
-        
         res.json({ message: 'User and their associated data deleted successfully' });
     } catch (err) {
         console.error('Delete user error:', err);
@@ -915,11 +860,8 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 app.get('/api/admin/missing-persons', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT mp.*, u.email as poster_email 
-            FROM missing_persons mp 
-            JOIN users u ON mp.user_id = u.id 
-            WHERE mp.status = 'active'
-            ORDER BY mp.date_missing DESC
+            SELECT mp.*, u.email as poster_email FROM missing_persons mp JOIN users u ON mp.user_id = u.id 
+            WHERE mp.status = 'active' ORDER BY mp.date_missing DESC
         `);
         res.json(result.rows);
     } catch (err) {
@@ -931,9 +873,7 @@ app.get('/api/admin/missing-persons', authenticateToken, requireAdmin, async (re
 app.get('/api/admin/sightings-full', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT s.*, u.email as reporter_email 
-            FROM sightings s 
-            JOIN users u ON s.user_id = u.id 
+            SELECT s.*, u.email as reporter_email FROM sightings s JOIN users u ON s.user_id = u.id 
             ORDER BY s.created_at DESC
         `);
         res.json(result.rows);
@@ -950,60 +890,34 @@ app.get('/api/admin/sightings-full', authenticateToken, requireAdmin, async (req
 app.get('/api/police/cases', authenticateToken, async (req, res) => {
     try {
         const userStationId = req.user.station_id;
-        
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
             return res.status(403).json({ error: 'User is not assigned to a police station.' });
         }
 
-        const stationMap = {
-            'RUI-2026-001': 'Ruiru Police Station',
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station',
-            'NRB-2026-001': 'Central Police Station',
-            'KIL-2026-001': 'Kilimani Police Station',
-            'WES-2026-001': 'Westlands Police Station',
-            'LAN-2026-001': "Lang'ata Police Station",
-            'EMB-2026-001': 'Embakasi Police Station',
-            'PAR-2026-001': 'Parklands police station',
-            'KAR-2026-001': 'Karen Police Station.'
-        };
-
-        const exactStationName = stationMap[userStationId];
-
-        if (!exactStationName) {
-            return res.status(400).json({ error: 'Unknown station ID.' });
-        }
+        const exactStationName = getStationName(userStationId);
+        if (!exactStationName) return res.status(400).json({ error: 'Unknown station ID.' });
 
         console.log(`Fetching data for station: ${exactStationName}`);
 
         const missingResult = await pool.query(
-            `SELECT mp.*, u.email as poster_email 
-             FROM missing_persons mp 
-             LEFT JOIN users u ON mp.user_id = u.id 
-             WHERE mp.police_station = $1 AND mp.status = 'active'
-             ORDER BY mp.date_missing DESC`, 
+            `SELECT mp.*, u.email as poster_email FROM missing_persons mp LEFT JOIN users u ON mp.user_id = u.id 
+             WHERE mp.police_station = $1 AND mp.status = 'active' ORDER BY mp.date_missing DESC`, 
             [exactStationName]
         );
 
         const sightingsResult = await pool.query(
-            `SELECT s.*, u.email as poster_email 
-             FROM sightings s 
-             LEFT JOIN users u ON s.user_id = u.id 
-             WHERE s.police_station = $1 AND (s.status IS NULL OR s.status = 'pending')
-             ORDER BY s.created_at DESC`, 
+            `SELECT s.*, u.email as poster_email FROM sightings s LEFT JOIN users u ON s.user_id = u.id 
+             WHERE s.police_station = $1 AND (s.status IS NULL OR s.status = 'pending') ORDER BY s.created_at DESC`, 
             [exactStationName]
         );
 
         const resolvedResult = await pool.query(
-            `SELECT COUNT(*) FROM missing_persons 
-             WHERE police_station = $1 AND status = 'resolved' AND resolved_at >= NOW() - INTERVAL '30 days'`,
+            `SELECT COUNT(*) FROM missing_persons WHERE police_station = $1 AND status = 'resolved' AND resolved_at >= NOW() - INTERVAL '30 days'`,
             [exactStationName]
         );
 
         const criticalResult = await pool.query(
-            `SELECT COUNT(*) FROM missing_persons 
-             WHERE police_station = $1 AND status = 'active' 
-             AND (age <= 18 OR LOWER(description) LIKE '%kidnapped%')`,
+            `SELECT COUNT(*) FROM missing_persons WHERE police_station = $1 AND status = 'active' AND (age <= 18 OR LOWER(description) LIKE '%kidnapped%')`,
             [exactStationName]
         );
 
@@ -1014,7 +928,6 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
             resolvedThisMonth: parseInt(resolvedResult.rows[0].count),
             criticalCases: parseInt(criticalResult.rows[0].count)
         });
-
     } catch (err) {
         console.error('Police dashboard fetch error:', err);
         res.status(500).json({ error: 'Failed to fetch police dashboard data' });
@@ -1032,30 +945,13 @@ app.get('/api/reports/monthly-missing', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'User is not assigned to a police station.' });
         }
 
-        const stationMap = {
-            'RUI-2026-001': 'Ruiru Police Station', 
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station',
-            'NRB-2026-001': 'Central Police Station', 
-            'KIL-2026-001': 'Kilimani Police Station',
-            'WES-2026-001': 'Westlands Police Station', 
-            'LAN-2026-001': "Lang'ata Police Station",
-            'EMB-2026-001': 'Embakasi Police Station', 
-            'PAR-2026-001': 'Parklands police station',
-            'KAR-2026-001': 'Karen Police Station.'
-        };
-
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
 
         const result = await pool.query(
-            `SELECT mp.*, u.email as poster_email 
-             FROM missing_persons mp 
-             LEFT JOIN users u ON mp.user_id = u.id 
-             WHERE mp.police_station = $1 
-             AND EXTRACT(MONTH FROM mp.date_missing) = $2 
-             AND EXTRACT(YEAR FROM mp.date_missing) = $3
+            `SELECT mp.*, u.email as poster_email FROM missing_persons mp LEFT JOIN users u ON mp.user_id = u.id 
+             WHERE mp.police_station = $1 AND EXTRACT(MONTH FROM mp.date_missing) = $2 AND EXTRACT(YEAR FROM mp.date_missing) = $3
              ORDER BY mp.date_missing DESC`,
             [exactStationName, currentMonth, currentYear]
         );
@@ -1076,19 +972,7 @@ app.get('/api/reports/sighting-analysis', authenticateToken, async (req, res) =>
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 
-            'RUI-2026-001': 'Ruiru Police Station', 
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station', 
-            'NRB-2026-001': 'Central Police Station', 
-            'KIL-2026-001': 'Kilimani Police Station', 
-            'WES-2026-001': 'Westlands Police Station', 
-            'LAN-2026-001': "Lang'ata Police Station", 
-            'EMB-2026-001': 'Embakasi Police Station', 
-            'PAR-2026-001': 'Parklands police station', 
-            'KAR-2026-001': 'Karen Police Station.' 
-        };
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
 
@@ -1113,19 +997,7 @@ app.get('/api/reports/resolved-summary', authenticateToken, async (req, res) => 
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 
-            'RUI-2026-001': 'Ruiru Police Station', 
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station', 
-            'NRB-2026-001': 'Central Police Station', 
-            'KIL-2026-001': 'Kilimani Police Station', 
-            'WES-2026-001': 'Westlands Police Station', 
-            'LAN-2026-001': "Lang'ata Police Station", 
-            'EMB-2026-001': 'Embakasi Police Station', 
-            'PAR-2026-001': 'Parklands police station', 
-            'KAR-2026-001': 'Karen Police Station.' 
-        };
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
 
@@ -1153,19 +1025,7 @@ app.get('/api/reports/critical-cases', authenticateToken, async (req, res) => {
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 
-            'RUI-2026-001': 'Ruiru Police Station', 
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station', 
-            'NRB-2026-001': 'Central Police Station', 
-            'KIL-2026-001': 'Kilimani Police Station', 
-            'WES-2026-001': 'Westlands Police Station', 
-            'LAN-2026-001': "Lang'ata Police Station", 
-            'EMB-2026-001': 'Embakasi Police Station', 
-            'PAR-2026-001': 'Parklands police station', 
-            'KAR-2026-001': 'Karen Police Station.' 
-        };
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
 
@@ -1194,19 +1054,7 @@ app.get('/api/reports/station-performance', authenticateToken, async (req, res) 
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 
-            'RUI-2026-001': 'Ruiru Police Station', 
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station', 
-            'NRB-2026-001': 'Central Police Station', 
-            'KIL-2026-001': 'Kilimani Police Station', 
-            'WES-2026-001': 'Westlands Police Station', 
-            'LAN-2026-001': "Lang'ata Police Station", 
-            'EMB-2026-001': 'Embakasi Police Station', 
-            'PAR-2026-001': 'Parklands police station', 
-            'KAR-2026-001': 'Karen Police Station.' 
-        };
-        const exactStationName = stationMap[userStationId];
+        const exactStationName = getStationName(userStationId);
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
 
@@ -1234,20 +1082,7 @@ app.get('/api/reports/weekly-activity', authenticateToken, async (req, res) => {
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') return res.status(403).json({ error: 'User is not assigned to a police station.' });
 
-        const stationMap = { 
-            'RUI-2026-001': 'Ruiru Police Station', 
-            'GAT-2026-001': 'Gatundu Police Station', // <-- ADDED GATUNDU
-            'KAS-2026-001': 'Kasarani Police Station', 
-            'NRB-2026-001': 'Central Police Station', 
-            'KIL-2026-001': 'Kilimani Police Station', 
-            'WES-2026-001': 'Westlands Police Station', 
-            'LAN-2026-001': "Lang'ata Police Station", 
-            'EMB-2026-001': 'Embakasi Police Station', 
-            'PAR-2026-001': 'Parklands police station', 
-            'KAR-2026-001': 'Karen Police Station.' 
-        };
-        const exactStationName = stationMap[userStationId];
-        
+        const exactStationName = getStationName(userStationId);
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -1279,11 +1114,8 @@ app.get('/api/reports/weekly-activity', authenticateToken, async (req, res) => {
 app.get('/api/admin/audit-logs', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT al.*, u.email as user_email 
-            FROM audit_logs al 
-            LEFT JOIN users u ON al.user_id = u.id 
-            ORDER BY al.created_at DESC 
-            LIMIT 100
+            SELECT al.*, u.email as user_email FROM audit_logs al LEFT JOIN users u ON al.user_id = u.id 
+            ORDER BY al.created_at DESC LIMIT 100
         `);
         res.json(result.rows);
     } catch (err) {
