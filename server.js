@@ -833,8 +833,9 @@ app.delete('/api/sightings/:id', authenticateToken, async (req, res) => {
 
 app.get('/api/users/my-posts', authenticateToken, async (req, res) => {
     try {
+        // FIXED: Removed "AND status = 'active'" so users can see ALL their posts (active, resolved, pending review)
         const missingResult = await pool.query(
-            'SELECT * FROM missing_persons WHERE user_id = $1 AND status = \'active\' ORDER BY date_missing DESC', 
+            'SELECT * FROM missing_persons WHERE user_id = $1 ORDER BY date_missing DESC', 
             [req.user.id]
         );
         const sightingsResult = await pool.query(
