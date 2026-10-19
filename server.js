@@ -446,6 +446,26 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // 4. MISSING PERSONS ROUTES
 // ==========================================
 
+// NEW: Get single missing person by ID (for review queue)
+app.get('/api/missing-persons/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(
+            'SELECT * FROM missing_persons WHERE id = $1',
+            [id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Post not found' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Fetch single post error:', err);
+        res.status(500).json({ error: 'Failed to fetch post' });
+    }
+});
+
 app.get('/api/missing-persons', async (req, res) => {
     try {
         const result = await pool.query(`
