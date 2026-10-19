@@ -36,13 +36,55 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Initialize Resend with your API Key
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ==========================================
-// UNIFIED POLICE STATION MAP
+// UNIFIED POLICE STATION MAP (WITH OLD ID ALIASES)
 // ==========================================
 const STATION_ID_TO_NAME = {
+    // === OLD IDs (Legacy format - kept for backward compatibility) ===
+    'RUI-2026-001': 'Ruiru Police Station',
+    'GAT-2026-001': 'Gatundu Police Station',
+    'KAS-2026-001': 'Kasarani Police Station',
+    'NRB-2026-001': 'Central Police Station',
+    'KIL-2026-001': 'Kilimani Police Station',
+    'WES-2026-001': 'Westlands Police Station',
+    'LAN-2026-001': "Lang'ata Police Station",
+    'EMB-2026-001': 'Embakasi Police Station',
+    'RUA-2026-001': 'Ruaraka Police Station',
+    'DON-2026-001': 'Donholm Police Station',
+    'KAY-2026-001': 'Kayole Police Station',
+    'PUM-2026-001': 'Pumwani Police Station',
+    'KAM-2026-001': 'Kamukunji Police Station',
+    'STA-2026-001': 'Starehe Police Station',
+    'MAK-2026-001': 'Makadara Police Station',
+    'KIB-2026-001': 'Kibera Police Station',
+    'PAR-2026-001': 'Parklands Police Station',
+    'THI-2026-001': 'Thika Police Station',
+    'KIA-2026-001': 'Kiambu Town Police Station',
+    'LIM-2026-001': 'Limuru Police Station',
+    'JUJ-2026-001': 'Juja Police Station',
+    'KAR-2026-001': 'Karuri Police Station',
+    'KIK-2026-001': 'Kikuyu Police Station',
+    'MOM-2026-001': 'Mombasa Central Police Station',
+    'TUD-2026-001': 'Tudor Police Station',
+    'CHA-2026-001': 'Changamwe Police Station',
+    'KIS-2026-001': 'Kisauni Police Station',
+    'LIK-2026-001': 'Likoni Police Station',
+    'KIS-CEN-001': 'Kisumu Central Police Station',
+    'KIS-TOW-001': 'Kisumu Town Police Station',
+    'NYA-2026-001': 'Nyando Police Station',
+    'MUH-2026-001': 'Muhoroni Police Station',
+    'NAK-CEN-001': 'Nakuru Central Police Station',
+    'NAK-TOW-001': 'Nakuru Town Police Station',
+    'NAI-2026-001': 'Naivasha Police Station',
+    'GIL-2026-001': 'Gilgil Police Station',
+    'MOL-2026-001': 'Molo Police Station',
+    'ELD-2026-001': 'Eldoret Police Station',
+    'ELD-TOW-001': 'Eldoret Town Police Station',
+    'TUR-2026-001': 'Turbo Police Station',
+    
+    // === NEW IDs (Current format) ===
     'NBI-CEN': 'Central Police Station', 'NBI-KIL': 'Kilimani Police Station', 'NBI-WES': 'Westlands Police Station',
     'NBI-KAS': 'Kasarani Police Station', 'NBI-LAN': "Lang'ata Police Station", 'NBI-EMB': 'Embakasi Police Station',
     'NBI-RUA': 'Ruaraka Police Station', 'NBI-DON': 'Donholm Police Station', 'NBI-KAY': 'Kayole Police Station',
@@ -108,7 +150,6 @@ const STATION_ID_TO_NAME = {
     'KIS2-KER': 'Keroka Police Station', 'KIS2-SUN': 'Suneka Police Station', 'NYA-NYA': 'Nyamira Town Police Station'
 };
 
-// Helper function to get station name from ID
 const getStationName = (id) => STATION_ID_TO_NAME[id] || id;
 
 // ==========================================
@@ -158,9 +199,6 @@ const requireAdmin = (req, res, next) => {
     next();
 };
 
-// ==========================================
-// 2.5. AUDIT LOGGING HELPER
-// ==========================================
 async function logAudit(userId, action, targetType, targetId, details, ipAddress) {
     try {
         await pool.query(
@@ -295,9 +333,6 @@ app.get('/api/auth/verify/:token', async (req, res) => {
     }
 });
 
-// ==========================================
-// SEND VERIFICATION EMAIL ROUTE
-// ==========================================
 app.post('/api/auth/send-verification-email', async (req, res) => {
   try {
     const { email, verificationLink } = req.body;
@@ -343,10 +378,6 @@ app.post('/api/auth/send-verification-email', async (req, res) => {
     res.status(500).json({ error: 'Failed to send email' });
   }
 });
-
-// ==========================================
-// FORGOT PASSWORD ROUTES
-// ==========================================
 
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
@@ -466,18 +497,17 @@ app.get('/api/missing-persons/station/:stationId', authenticateToken, async (req
     }
 });
 
-// DYNAMIC POLICE STATIONS ENDPOINT
 app.get('/api/police-stations', async (req, res) => {
     try {
         const stations = Object.entries(STATION_ID_TO_NAME).map(([id, name]) => {
             let county = 'Other';
-            if (id.startsWith('NBI')) county = 'Nairobi';
-            else if (['KIA', 'MUR', 'NYE', 'KIR', 'NYA'].some(p => id.startsWith(p))) county = 'Central';
-            else if (['MAC', 'KIT', 'MAK', 'EMB', 'MER', 'MAR', 'GAR', 'WAJ', 'MAN', 'ISI'].some(p => id.startsWith(p))) county = 'Eastern & North Eastern';
-            else if (['MOM', 'KIL', 'KWA', 'TAN', 'LAM'].some(p => id.startsWith(p))) county = 'Coast';
-            else if (['NAK', 'UAS', 'NAN', 'KER', 'BOM', 'NAR', 'KAJ', 'BAR', 'LAI', 'SAM', 'TUR', 'WES', 'TRA'].some(p => id.startsWith(p))) county = 'Rift Valley';
-            else if (['KAK', 'BUN', 'BUS', 'VIH'].some(p => id.startsWith(p))) county = 'Western';
-            else if (['KIS', 'SIA', 'HOM', 'MIG', 'KIS2'].some(p => id.startsWith(p))) county = 'Nyanza';
+            if (id.startsWith('NBI') || id.startsWith('RUI') || id.startsWith('GAT') || id.startsWith('KAS') || id.startsWith('NRB') || id.startsWith('KIL') || id.startsWith('WES') || id.startsWith('LAN') || id.startsWith('EMB') || id.startsWith('RUA') || id.startsWith('DON') || id.startsWith('KAY') || id.startsWith('PUM') || id.startsWith('KAM') || id.startsWith('STA') || id.startsWith('MAK') || id.startsWith('KIB') || id.startsWith('PAR') || id.startsWith('THI') || id.startsWith('KIA-2026') || id.startsWith('LIM') || id.startsWith('JUJ') || id.startsWith('KAR-2026') || id.startsWith('KIK')) county = 'Nairobi/Central';
+            else if (id.startsWith('KIA') || id.startsWith('MUR') || id.startsWith('NYE') || id.startsWith('KIR') || id.startsWith('NYA-OLK') || id.startsWith('NYA-NJA') || id.startsWith('NYA-KIN')) county = 'Central';
+            else if (id.startsWith('MAC') || id.startsWith('KIT') || id.startsWith('MAK') || id.startsWith('EMB') || id.startsWith('MER') || id.startsWith('MAR') || id.startsWith('GAR') || id.startsWith('WAJ') || id.startsWith('MAN') || id.startsWith('ISI')) county = 'Eastern & North Eastern';
+            else if (id.startsWith('MOM') || id.startsWith('KIL') || id.startsWith('KWA') || id.startsWith('TAN') || id.startsWith('LAM')) county = 'Coast';
+            else if (id.startsWith('NAK') || id.startsWith('UAS') || id.startsWith('NAN') || id.startsWith('KER') || id.startsWith('BOM') || id.startsWith('NAR') || id.startsWith('KAJ') || id.startsWith('BAR') || id.startsWith('LAI') || id.startsWith('SAM') || id.startsWith('TUR') || id.startsWith('WES') || id.startsWith('TRA')) county = 'Rift Valley';
+            else if (id.startsWith('KAK') || id.startsWith('BUN') || id.startsWith('BUS') || id.startsWith('VIH')) county = 'Western';
+            else if (id.startsWith('KIS') || id.startsWith('SIA') || id.startsWith('HOM') || id.startsWith('MIG') || id.startsWith('KIS2')) county = 'Nyanza';
             
             return { id, name, county };
         });
@@ -589,9 +619,6 @@ app.get('/api/missing-persons/resolved-public', async (req, res) => {
     }
 });
 
-// ==========================================
-// UPDATED: SOFT DELETE FOR POLICE REVIEW
-// ==========================================
 app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -603,7 +630,6 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Not authorized to request deletion for this post' });
         }
 
-        // Update status instead of permanently deleting
         await pool.query(
             `UPDATE missing_persons SET status = 'deleted_pending_review', resolution_notes = $1 WHERE id = $2`,
             [reason || 'User requested deletion', id]
@@ -618,7 +644,6 @@ app.delete('/api/missing-persons/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// NEW: Fetch posts pending deletion review for a specific police station
 app.get('/api/police/deleted-posts', authenticateToken, async (req, res) => {
     try {
         const userStationId = req.user.station_id;
@@ -641,11 +666,10 @@ app.get('/api/police/deleted-posts', authenticateToken, async (req, res) => {
     }
 });
 
-// NEW: Police officer makes a final decision on the deleted post
 app.put('/api/police/review-deletion/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const { action, officer_notes } = req.body; // action: 'resolve' or 'permanent_delete'
+        const { action, officer_notes } = req.body;
         
         const userStationId = req.user.station_id;
         if (!userStationId || userStationId === 'UNASSIGNED' || userStationId === 'ADMIN') {
@@ -660,7 +684,6 @@ app.put('/api/police/review-deletion/:id', authenticateToken, async (req, res) =
         }
 
         if (action === 'resolve') {
-            // Officer confirms the person was found
             await pool.query(
                 `UPDATE missing_persons SET status = 'resolved', resolved_at = NOW(), resolution_notes = $1 WHERE id = $2`,
                 [officer_notes || 'Verified by police: Case resolved based on user request.', id]
@@ -669,7 +692,6 @@ app.put('/api/police/review-deletion/:id', authenticateToken, async (req, res) =
             res.json({ message: 'Case officially marked as resolved.' });
             
         } else if (action === 'permanent_delete') {
-            // Officer confirms it was a duplicate/fake and scrubs it
             await pool.query('DELETE FROM missing_persons WHERE id = $1', [id]);
             await logAudit(req.user.id, 'PERMANENT_DELETE', 'missing_person', id, `Approved permanent deletion`, req.ip);
             res.json({ message: 'Post permanently deleted from database.' });
@@ -972,7 +994,7 @@ app.get('/api/police/cases', authenticateToken, async (req, res) => {
         const exactStationName = getStationName(userStationId);
         if (!exactStationName) return res.status(400).json({ error: 'Unknown station ID.' });
 
-        console.log(`Fetching data for station: ${exactStationName}`);
+        console.log(`Fetching data for station: ${exactStationName} (ID: ${userStationId})`);
 
         const missingResult = await pool.query(
             `SELECT mp.*, u.email as poster_email FROM missing_persons mp LEFT JOIN users u ON mp.user_id = u.id 
@@ -1182,10 +1204,6 @@ app.get('/api/reports/weekly-activity', authenticateToken, async (req, res) => {
     }
 });
 
-// ==========================================
-// 10.5. AUDIT LOGS ROUTE
-// ==========================================
-
 app.get('/api/admin/audit-logs', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -1198,10 +1216,6 @@ app.get('/api/admin/audit-logs', authenticateToken, requireAdmin, async (req, re
         res.status(500).json({ error: 'Failed to fetch audit logs' });
     }
 });
-
-// ==========================================
-// 11. SERVER START
-// ==========================================
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
